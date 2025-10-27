@@ -11,14 +11,20 @@
 """
 
 import sys
-sys.path.insert(0, '/Users/yiming/projects/rest2/femto')
+
+import pathlib
+
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+FEMTO_SRC = REPO_ROOT / "femto"
+if FEMTO_SRC.exists() and str(FEMTO_SRC) not in sys.path:
+    sys.path.insert(0, str(FEMTO_SRC))
 
 import pyarrow
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # 非交互式后端
 import matplotlib.pyplot as plt
-import pathlib
 
 # 尝试导入 mdtraj（用于轨迹分析）
 try:
@@ -52,174 +58,240 @@ with pyarrow.OSFile(str(samples_file), 'rb') as file:
 print(f"✓ 加载完成: {len(df)} 个采样循环")
 print(f"  - 数据列: {list(df.columns)}")
 
+if df.empty:
+    print("❌ 错误: 采样文件为空，无法分析")
+    sys.exit(1)
+
 # =====================================================================
 # 2. 计算交换接受率
 # =====================================================================
 print("\n[2/5] 分析交换接受率...")
 
-# 获取最后一个循环的交换统计（累积值）
-n_proposed_raw = df['n_proposed_swaps'].iloc[-1]
-n_accepted_raw = df['n_accepted_swaps'].iloc[-1]
-
-# 安全转换：递归展平任何嵌套结构
 def safe_flatten(obj):
     """递归展平嵌套的数组/列表，返回 Python 原生列表"""
     if isinstance(obj, (list, tuple)):
-        result = []
+        flattened = []
         for item in obj:
-            result.extend(safe_flatten(item))
-        return result
-    elif isinstance(obj, np.ndarray):
+            flattened.extend(safe_flatten(item))
+        return flattened
+    if isinstance(obj, np.ndarray):
         return safe_flatten(obj.tolist())
-    else:
-        return [obj]
+    return [obj]
 
 def to_scalar(val):
     """将 numpy 标量/数组安全转换为 Python 标量"""
-    # 如果是 numpy 数组
     if isinstance(val, np.ndarray):
-        # 如果是多元素数组，先展平然后取第一个元素
         if val.size > 1:
             val = val.flatten()[0]
-        # 如果是单元素数组，先取出元素
         elif val.size == 1:
             val = val.item()
         else:
-            return 0.0  # 空数组
-
-    # 如果有 item() 方法（numpy 标量类型）
+            return 0.0
     if hasattr(val, 'item') and callable(getattr(val, 'item', None)):
         try:
             return val.item()
         except (ValueError, AttributeError):
             pass
-
-    # 直接返回（已经是 Python 标量）
     return float(val) if not isinstance(val, (int, float)) else val
 
-n_proposed_list = safe_flatten(n_proposed_raw)
-n_accepted_list = safe_flatten(n_accepted_raw)
+acceptance_rates = None
+total_proposed = None
+total_accepted = None
+n_states = None
 
-# 转换为 numpy 数组（现在都是标量）
-n_proposed = np.array(n_proposed_list)
-n_accepted = np.array(n_accepted_list)
+required_swap_cols = {'n_proposed_swaps', 'n_accepted_swaps'}
+if not required_swap_cols.issubset(df.columns):
+    print("⚠️ 采样数据缺少交换统计列，跳过交换率分析")
+else:
+    proposed_series = df['n_proposed_swaps'].dropna()
+    accepted_series = df['n_accepted_swaps'].dropna()
 
-print(f"  DEBUG: n_proposed = {n_proposed}")
-print(f"  DEBUG: n_accepted = {n_accepted}")
+    if proposed_series.empty or accepted_series.empty:
+        print("⚠️ 交换统计列没有有效数据，跳过交换率分析")
+    else:
+        n_proposed_raw = proposed_series.iloc[-1]
+        n_accepted_raw = accepted_series.iloc[-1]
 
-# 计算接受率
-acceptance_rates = n_accepted / (n_proposed + 1e-10)
+        n_proposed_list = safe_flatten(n_proposed_raw)
+        n_accepted_list = safe_flatten(n_accepted_raw)
 
-# 副本数 = 相邻交换对数 + 1
-n_states = len(acceptance_rates) + 1
+        if not n_proposed_list or not n_accepted_list:
+            print("⚠️ 交换统计格式异常，跳过交换率分析")
+        else:
+            n_pairs = min(len(n_proposed_list), len(n_accepted_list))
 
-# 计算总数（现在可以安全求和）
-total_proposed = int(np.sum(n_proposed))
-total_accepted = int(np.sum(n_accepted))
+            if n_pairs == 0:
+                print("⚠️ 未检测到交换配对，跳过交换率分析")
+            else:
+                n_proposed = np.asarray(n_proposed_list[:n_pairs], dtype=float)
+                n_accepted = np.asarray(n_accepted_list[:n_pairs], dtype=float)
 
-print(f"\n✓ 副本交换统计:")
-print(f"  - 总交换提议: {total_proposed}")
-print(f"  - 总接受次数: {total_accepted}")
-print(f"  - 全局接受率: {100.0 * total_accepted / total_proposed:.2f}%")
+                acceptance_rates = np.divide(
+                    n_accepted,
+                    n_proposed,
+                    out=np.zeros_like(n_accepted, dtype=float),
+                    where=n_proposed > 0,
+                )
+                n_states = n_pairs + 1
+                total_proposed = float(n_proposed.sum())
+                total_accepted = float(n_accepted.sum())
 
-print(f"\n  相邻态接受率:")
-for i in range(len(acceptance_rates)):
-    rate = to_scalar(acceptance_rates[i])
-    status = "✅" if 0.15 <= rate <= 0.35 else "⚠️"
-    print(f"    State {i} ↔ {i+1}: {100.0 * rate:.2f}% {status}")
+                print(f"  - n_proposed = {n_proposed}")
+                print(f"  - n_accepted = {n_accepted}")
 
-# 构建完整的接受率矩阵（用于可视化）
-acceptance_matrix = np.zeros((n_states, n_states))
-for i in range(len(acceptance_rates)):
-    acceptance_matrix[i, i+1] = acceptance_rates[i]
-    acceptance_matrix[i+1, i] = acceptance_rates[i]  # 对称
+                if total_proposed > 0:
+                    global_rate = 100.0 * total_accepted / total_proposed
+                    print(f"\n✓ 副本交换统计:")
+                    print(f"  - 总交换提议: {int(total_proposed)}")
+                    print(f"  - 总接受次数: {int(total_accepted)}")
+                    print(f"  - 全局接受率: {global_rate:.2f}%")
+                else:
+                    print("⚠️ 交换提议总数为 0，无法计算全局接受率")
 
-# 绘制接受率矩阵
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                if acceptance_rates.size:
+                    print(f"\n  相邻态接受率:")
+                    for i, rate in enumerate(acceptance_rates):
+                        status = "✅" if 0.15 <= rate <= 0.35 else "⚠️"
+                        print(f"    State {i} ↔ {i+1}: {100.0 * rate:.2f}% {status}")
 
-# 左图：接受率热图
-im = axes[0].imshow(acceptance_matrix, cmap='RdYlGn', vmin=0, vmax=0.5)
-axes[0].set_title('REST2 Exchange Acceptance Matrix')
-axes[0].set_xlabel('State j')
-axes[0].set_ylabel('State i')
-plt.colorbar(im, ax=axes[0], label='Acceptance Rate')
+if acceptance_rates is not None and acceptance_rates.size:
+    acceptance_matrix = np.zeros((n_states, n_states))
+    for i, rate in enumerate(acceptance_rates):
+        acceptance_matrix[i, i + 1] = rate
+        acceptance_matrix[i + 1, i] = rate
 
-# 添加数值标注
-for i in range(n_states):
-    for j in range(n_states):
-        if acceptance_matrix[i, j] > 0.01:
-            text = axes[0].text(j, i, f'{acceptance_matrix[i, j]:.2f}',
-                               ha="center", va="center", color="black", fontsize=8)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-# 右图：相邻态接受率柱状图
-diag_rates = [to_scalar(acceptance_rates[i]) for i in range(len(acceptance_rates))]
-colors = ['green' if 0.15 <= r <= 0.35 else 'orange' for r in diag_rates]
-axes[1].bar(range(len(diag_rates)), diag_rates, color=colors)
-axes[1].axhline(0.15, color='red', linestyle='--', alpha=0.5, label='理想下限')
-axes[1].axhline(0.35, color='red', linestyle='--', alpha=0.5, label='理想上限')
-axes[1].set_title('相邻态接受率')
-axes[1].set_xlabel('State Pair (i, i+1)')
-axes[1].set_ylabel('Acceptance Rate')
-axes[1].set_ylim([0, 0.6])
-axes[1].legend()
-axes[1].grid(axis='y', alpha=0.3)
+    im = axes[0].imshow(acceptance_matrix, cmap='RdYlGn', vmin=0, vmax=0.5)
+    axes[0].set_title('REST2 Exchange Acceptance Matrix')
+    axes[0].set_xlabel('State j')
+    axes[0].set_ylabel('State i')
+    plt.colorbar(im, ax=axes[0], label='Acceptance Rate')
 
-plt.tight_layout()
-plt.savefig('acceptance_rates.png', dpi=300)
-print(f"\n✅ 保存: acceptance_rates.png")
+    for i in range(n_states):
+        for j in range(n_states):
+            if acceptance_matrix[i, j] > 0.01:
+                axes[0].text(
+                    j,
+                    i,
+                    f'{acceptance_matrix[i, j]:.2f}',
+                    ha="center",
+                    va="center",
+                    color="black",
+                    fontsize=8,
+                )
+
+    diag_rates = [to_scalar(rate) for rate in acceptance_rates]
+    colors = ['green' if 0.15 <= r <= 0.35 else 'orange' for r in diag_rates]
+    axes[1].bar(range(len(diag_rates)), diag_rates, color=colors)
+    axes[1].axhline(0.15, color='red', linestyle='--', alpha=0.5, label='理想下限')
+    axes[1].axhline(0.35, color='red', linestyle='--', alpha=0.5, label='理想上限')
+    axes[1].set_title('相邻态接受率')
+    axes[1].set_xlabel('State Pair (i, i+1)')
+    axes[1].set_ylabel('Acceptance Rate')
+    axes[1].set_ylim([0, 0.6])
+    axes[1].legend()
+    axes[1].grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('acceptance_rates.png', dpi=300)
+    print(f"\n✅ 保存: acceptance_rates.png")
+else:
+    print("⚠️ 跳过交换率图表生成")
 
 # =====================================================================
 # 3. 分析能量收敛性
 # =====================================================================
 print("\n[3/5] 分析能量收敛性...")
 
-# 提取 u_kn 矩阵
-u_kn_list = [df['u_kn'].iloc[i] for i in range(len(df))]
-u_kn = np.array(u_kn_list)  # shape: (n_cycles, n_states, n_states)
+energies = None
+u_kn_array = None
 
-# 提取各副本在自己状态的能量
-energies = np.array([np.diag(u_kn[i]) for i in range(len(u_kn))])  # shape: (n_cycles, n_states)
-
-print(f"✓ 能量数据:")
-print(f"  - 采样循环: {energies.shape[0]}")
-print(f"  - 副本数: {energies.shape[1]}")
-
-# 计算能量统计
-for i in range(n_states):
-    mean_e = to_scalar(energies[:, i].mean())
-    std_e = to_scalar(energies[:, i].std())
-    print(f"  - State {i}: 平均 = {mean_e:.2f} kT, 标准差 = {std_e:.2f} kT")
-
-# 绘制能量时间序列
-fig, axes = plt.subplots(2, 1, figsize=(12, 8))
-
-# 上图：原始能量时间序列
-for i in range(n_states):
-    axes[0].plot(energies[:, i], alpha=0.6, label=f'State {i}', linewidth=1)
-axes[0].set_xlabel('Cycle')
-axes[0].set_ylabel('Reduced Potential (kT)')
-axes[0].set_title('Energy Time Series by State')
-axes[0].legend(ncol=n_states, fontsize=8)
-axes[0].grid(alpha=0.3)
-
-# 下图：移动平均（检查收敛）
-window = max(1, min(50, len(energies) // 5))  # 至少有 5 个窗口
-if window > 1:
-    for i in range(n_states):
-        moving_avg = np.convolve(energies[:, i], np.ones(window)/window, mode='valid')
-        axes[1].plot(moving_avg, label=f'State {i}', linewidth=1.5)
-    axes[1].set_xlabel('Cycle')
-    axes[1].set_ylabel(f'Reduced Potential (kT, {window}-cycle MA)')
-    axes[1].set_title('能量移动平均（收敛性检查）')
-    axes[1].legend(ncol=n_states, fontsize=8)
-    axes[1].grid(alpha=0.3)
+if 'u_kn' not in df.columns:
+    print("⚠️ 采样数据缺少 u_kn 列，跳过能量分析")
 else:
-    axes[1].text(0.5, 0.5, '数据点太少，无法计算移动平均',
-                 ha='center', va='center', transform=axes[1].transAxes)
+    u_kn_series = df['u_kn'].dropna()
 
-plt.tight_layout()
-plt.savefig('energy_convergence.png', dpi=300)
-print(f"\n✅ 保存: energy_convergence.png")
+    if u_kn_series.empty:
+        print("⚠️ u_kn 列没有有效数据，跳过能量分析")
+    else:
+        u_kn_list = []
+        invalid_shape = False
+
+        for entry in u_kn_series:
+            entry_array = np.asarray(entry)
+            if entry_array.ndim != 2:
+                invalid_shape = True
+                break
+            u_kn_list.append(entry_array)
+
+        if invalid_shape or not u_kn_list:
+            print("⚠️ u_kn 数据形状异常，跳过能量分析")
+        else:
+            try:
+                u_kn_array = np.stack(u_kn_list, axis=0)
+            except ValueError:
+                u_kn_array = None
+                print("⚠️ u_kn 数据不可堆叠，跳过能量分析")
+
+if u_kn_array is not None:
+    if u_kn_array.shape[1] != u_kn_array.shape[2]:
+        print("⚠️ u_kn 数据不是方阵，跳过能量分析")
+    else:
+        if n_states is None:
+            n_states = u_kn_array.shape[1]
+        elif n_states != u_kn_array.shape[1]:
+            print(f"⚠️ 交换统计副本数 {n_states} 与 u_kn 副本数 {u_kn_array.shape[1]} 不一致，以 u_kn 为准")
+            n_states = u_kn_array.shape[1]
+
+        energies = np.diagonal(u_kn_array, axis1=1, axis2=2)
+
+if energies is not None:
+    print(f"✓ 能量数据:")
+    print(f"  - 采样循环: {energies.shape[0]}")
+    print(f"  - 副本数: {energies.shape[1]}")
+
+    for i in range(energies.shape[1]):
+        mean_e = to_scalar(energies[:, i].mean())
+        std_e = to_scalar(energies[:, i].std())
+        print(f"  - State {i}: 平均 = {mean_e:.2f} kT, 标准差 = {std_e:.2f} kT")
+
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+
+    for i in range(energies.shape[1]):
+        axes[0].plot(energies[:, i], alpha=0.6, label=f'State {i}', linewidth=1)
+    axes[0].set_xlabel('Cycle')
+    axes[0].set_ylabel('Reduced Potential (kT)')
+    axes[0].set_title('Energy Time Series by State')
+    axes[0].legend(ncol=energies.shape[1], fontsize=8)
+    axes[0].grid(alpha=0.3)
+
+    window = max(1, min(50, energies.shape[0] // 5))
+    if window > 1:
+        kernel = np.ones(window) / window
+        for i in range(energies.shape[1]):
+            moving_avg = np.convolve(energies[:, i], kernel, mode='valid')
+            axes[1].plot(moving_avg, label=f'State {i}', linewidth=1.5)
+        axes[1].set_xlabel('Cycle')
+        axes[1].set_ylabel(f'Reduced Potential (kT, {window}-cycle MA)')
+        axes[1].set_title('能量移动平均（收敛性检查）')
+        axes[1].legend(ncol=energies.shape[1], fontsize=8)
+        axes[1].grid(alpha=0.3)
+    else:
+        axes[1].text(
+            0.5,
+            0.5,
+            '数据点太少，无法计算移动平均',
+            ha='center',
+            va='center',
+            transform=axes[1].transAxes,
+        )
+
+    plt.tight_layout()
+    plt.savefig('energy_convergence.png', dpi=300)
+    print(f"\n✅ 保存: energy_convergence.png")
+else:
+    print("⚠️ 跳过能量分析图表生成")
 
 # =====================================================================
 # 4. 分析扭转角分布（需要 mdtraj）
@@ -315,18 +387,35 @@ print("\n" + "="*60)
 print("REST2 HREMD 测试总结")
 print("="*60)
 print(f"\n系统信息:")
-print(f"  - 副本数: {n_states}")
+replica_info = n_states if n_states is not None else '未知'
+print(f"  - 副本数: {replica_info}")
 print(f"  - 采样循环: {len(df)}")
-print(f"  - 总采样点: {len(df) * n_states}")
+if isinstance(replica_info, int):
+    print(f"  - 总采样点: {len(df) * replica_info}")
+else:
+    print("  - 总采样点: 未知（缺少副本数信息）")
 
 print(f"\n交换统计:")
-print(f"  - 全局接受率: {100.0 * total_accepted / total_proposed:.2f}%")
-avg_neighbor_rate = to_scalar(np.mean(acceptance_rates))
-print(f"  - 平均相邻态接受率: {100.0 * avg_neighbor_rate:.2f}%")
+avg_neighbor_rate = None
+if acceptance_rates is None or not acceptance_rates.size:
+    print("  - 未生成交换统计（缺少或无效数据）")
+else:
+    if total_proposed and total_proposed > 0:
+        global_rate = 100.0 * total_accepted / total_proposed
+        print(f"  - 全局接受率: {global_rate:.2f}%")
+    else:
+        print("  - 全局接受率: 未知（总提议为 0）")
+    avg_neighbor_rate = to_scalar(np.mean(acceptance_rates))
+    print(f"  - 平均相邻态接受率: {100.0 * avg_neighbor_rate:.2f}%")
 
 print(f"\n能量统计 (State 0):")
-print(f"  - 平均: {to_scalar(energies[:, 0].mean()):.2f} kT")
-print(f"  - 标准差: {to_scalar(energies[:, 0].std()):.2f} kT")
+if energies is None or energies.size == 0 or energies.shape[1] == 0:
+    print("  - 未生成能量统计（缺少或无效数据）")
+else:
+    state0_mean = to_scalar(energies[:, 0].mean())
+    state0_std = to_scalar(energies[:, 0].std())
+    print(f"  - 平均: {state0_mean:.2f} kT")
+    print(f"  - 标准差: {state0_std:.2f} kT")
 
 if HAS_MDTRAJ and phi_deg is not None:
     print(f"\n构象采样 (State 0):")
@@ -340,17 +429,23 @@ if HAS_MDTRAJ and phi_deg is not None:
     print(f"  ✓ ramachandran.png")
 
 print(f"\n评估:")
-if avg_neighbor_rate >= 0.15 and avg_neighbor_rate <= 0.35:
-    print(f"  ✅ 接受率在理想范围内 (15-35%)")
+if avg_neighbor_rate is not None:
+    if 0.15 <= avg_neighbor_rate <= 0.35:
+        print(f"  ✅ 接受率在理想范围内 (15-35%)")
+    else:
+        print(f"  ⚠️ 接受率不理想 (建议: 调整温度梯度)")
 else:
-    print(f"  ⚠️ 接受率不理想 (建议: 调整温度梯度)")
+    print(f"  ⚠️ 未能评估接受率（缺少交换统计）")
 
-mean_energy = to_scalar(energies[:, 0].mean())
-std_energy = to_scalar(energies[:, 0].std())
-if std_energy / mean_energy < 0.1:
-    print(f"  ✅ 能量收敛良好 (CV < 10%)")
+if energies is not None and energies.size > 0 and energies.shape[1] > 0:
+    mean_energy = to_scalar(energies[:, 0].mean())
+    std_energy = to_scalar(energies[:, 0].std())
+    if mean_energy != 0 and std_energy / abs(mean_energy) < 0.1:
+        print(f"  ✅ 能量收敛良好 (CV < 10%)")
+    else:
+        print(f"  ⚠️ 能量仍在涨落（可能需要更长采样）")
 else:
-    print(f"  ⚠️ 能量仍在涨落（可能需要更长采样）")
+    print(f"  ⚠️ 未能评估能量收敛性（缺少能量数据）")
 
 print("="*60)
 print("\n✅ 分析完成！")

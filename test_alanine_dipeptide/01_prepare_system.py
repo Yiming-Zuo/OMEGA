@@ -202,33 +202,7 @@ print("✓ 保存: topology.pkl (mdtop.Topology)")
 # 保存 PDB 文件（可视化）
 topology.to_file('system.pdb')
 
-# 修正 PDB 格式：移除肽链的链ID，让 PyMOL 显示为连续分子
-with open('system.pdb', 'r') as f:
-    lines = f.readlines()
-
-with open('system.pdb', 'w') as f:
-    for line in lines:
-        if line.startswith('ATOM') or line.startswith('HETATM'):
-            # 统一为 ATOM 记录
-            if line.startswith('HETATM'):
-                line = 'ATOM  ' + line[6:]
-
-            # 检查是否是肽链原子（链A，残基ACE/ALA/NME）
-            if len(line) > 21 and line[21] == 'A':
-                residue_name = line[17:20].strip()
-                if residue_name in ['ACE', 'ALA', 'NME']:
-                    # 移除链ID：第22位改为空格
-                    line = line[:21] + ' ' + line[22:]
-        elif line.startswith('TER'):
-            # 处理 TER 标记，也移除肽链的链ID
-            if len(line) > 21 and line[21] == 'A':
-                # 检查残基名是否是肽链
-                if 'NME' in line or 'ACE' in line or 'ALA' in line:
-                    # 移除链ID：第22位改为空格
-                    line = line[:21] + ' ' + line[22:]
-        f.write(line)
-
-print("✓ 保存: system.pdb (已统一为 ATOM 格式，肽链已移除链ID)")
+print("✓ 保存: system.pdb")
 
 # 获取盒子尺寸
 box_vectors = system.getDefaultPeriodicBoxVectors()
