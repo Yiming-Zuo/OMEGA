@@ -6,6 +6,12 @@ OMEGA（OpenMM Enhanced-sampling General Architecture）是一个面向分子模
 
 > **当前状态**：初步开发阶段，正在进行丙氨酸二肽（Alanine Dipeptide）的测试采样。
 
+## 开发阶段
+
+1. **阶段一**：丙氨酸二肽（Alanine Dipeptide）的测试采样 ← 当前阶段
+2. **阶段二**：溶剂分支采样实现
+3. **阶段三**：复合物分支采样实现
+
 ## 数据流动
 ```
     输入结构                系统准备                  HREMD 采样               结果分析       
@@ -53,22 +59,47 @@ OMEGA（OpenMM Enhanced-sampling General Architecture）是一个面向分子模
 ## 项目结构
 
 ```
-REST2/
-├── README.md
-├── Running_a_REST_simulation.ipynb   # OpenMM REST2 教程
-└── test_alanine_dipeptide/           # 丙氨酸二肽测试案例
-    ├── alanine-dipeptide.pdb         # 输入结构
-    ├── 00_optimize_ladder.py         # 温度阶梯优化
-    ├── 01_prepare_system.py          # 系统准备（溶剂化 + REST2 缩放）
-    ├── 02_run_rest2_hremd.py         # 运行 HREMD 采样
-    ├── 03_analyze_results.py         # 结果分析
-    ├── 04_mbar_reweighting.py        # MBAR 重加权
-    ├── system.xml                    # OpenMM System（运行后生成）
-    ├── system.pdb                    # 溶剂化后的结构（运行后生成）
-    ├── topology.pkl                  # 拓扑对象（运行后生成）
-    └── outputs/                      # 采样输出（运行后生成）
-        ├── samples.arrow             # 采样统计
-        └── r*.dcd                    # 各副本轨迹
+OMEGA/
+├── CLAUDE.md                     # AI 协作指南
+├── LICENSE                       # MIT 许可证
+├── README.md                     # 项目说明
+├── requirements.txt              # 依赖列表
+│
+├── data/                         # 原始输入数据
+│   ├── alanine_dipeptide/        # 阶段一：测试体系
+│   ├── ligands/                  # 阶段二：溶剂分支配体
+│   └── complexes/                # 阶段三：复合物结构
+│
+├── docs/                         # 文档
+│   ├── MBAR_REWEIGHTING_PLAN.md
+│   └── alanine_dipeptide_workflow.md
+│
+├── notebooks/                    # Jupyter notebooks
+│   └── Running_a_REST_simulation.ipynb
+│
+├── outputs/                      # 运行输出
+│   ├── alanine_dipeptide/        # 阶段一输出
+│   │   ├── system.xml
+│   │   ├── system.pdb
+│   │   ├── topology.pkl
+│   │   └── hremd/                # HREMD 采样输出
+│   ├── solvent/                  # 阶段二：溶剂分支输出
+│   └── complex/                  # 阶段三：复合物分支输出
+│
+├── results/                      # 分析结果
+│   ├── figures/                  # 图片
+│   └── reports/                  # 报告
+│
+├── scripts/                      # Python 脚本
+│   ├── 00_optimize_ladder.py     # 温度阶梯优化
+│   ├── 01_prepare_system.py      # 系统准备
+│   ├── 02_run_rest2_hremd.py     # 运行 HREMD (CPU)
+│   ├── 02_run_rest2_hremd_gpu.py # 运行 HREMD (GPU)
+│   ├── 03_analyze_results.py     # 分析结果
+│   ├── 04_mbar_reweighting.py    # MBAR 重加权
+│   └── utils/                    # 工具函数
+│
+└── tests/                        # 测试代码
 ```
 
 ## 快速开始
@@ -84,13 +115,15 @@ conda install -c conda-forge openmm openmmtools pymbar mdtraj matplotlib pyarrow
 ### 2. 运行测试案例
 
 ```bash
-cd test_alanine_dipeptide
+cd scripts
 
 # 步骤 1: 准备系统（溶剂化 + REST2 缩放）
 python 01_prepare_system.py
 
 # 步骤 2: 运行 HREMD 采样
-python 02_run_rest2_hremd.py
+python 02_run_rest2_hremd.py      # CPU 版本
+# 或
+python 02_run_rest2_hremd_gpu.py  # GPU 版本
 
 # 步骤 3: 分析结果
 python 03_analyze_results.py
