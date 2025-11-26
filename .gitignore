@@ -114,8 +114,28 @@ ENV/
 .ruff_cache
 
 *.dcd
-*.pdb
-*.png
+# *.pdb
+# *.png
 *.pkl
 *.xml
 *.arrow
+
+# FReD specific
+FReD/outputs/*.npz
+FReD/outputs/*.csv
+FReD/outputs/*.arrow
+FReD/outputs/*.h5
+FReD/results/figures/*.png
+FReD/results/figures/*.pdf
+FReD/results/reports/*.txt
+FReD/results/reports/*.md
+!FReD/results/figures/README.md
+!FReD/results/reports/README.md
+!FReD/outputs/README.md
+!FReD/results/README.md
+
+# GROMACS backup files
+FReD/data/rep_*/#*#
+
+*.png
+*.pdb

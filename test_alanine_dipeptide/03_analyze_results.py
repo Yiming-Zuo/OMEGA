@@ -11,14 +11,7 @@
 """
 
 import sys
-
 import pathlib
-
-SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-FEMTO_SRC = REPO_ROOT / "femto"
-if FEMTO_SRC.exists() and str(FEMTO_SRC) not in sys.path:
-    sys.path.insert(0, str(FEMTO_SRC))
 
 import pyarrow
 import numpy as np
