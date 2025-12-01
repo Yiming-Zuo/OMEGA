@@ -139,6 +139,7 @@ FReD/data/rep_*/#*#
 
 *.png
 *.pdb
+*.txt
 
 femto/
 FReD/
