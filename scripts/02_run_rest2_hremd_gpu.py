@@ -3,17 +3,17 @@
 步骤 2 改进版 - GPU 加速版本: 运行 REST2 HREMD 模拟
 
 GPU 优化:
-1. ✅ 使用 CUDA 平台（速度提升 10-20 倍）
-2. ✅ femto 库自动配置 mixed 精度（平衡精度与速度）
-3. ✅ 自动检测 CUDA 可用性
-4. ✅ 独立输出目录避免冲突
+1. 使用 CUDA 平台（速度提升 10-20 倍）
+2. femto 库自动配置 mixed 精度（平衡精度与速度）
+3. 自动检测 CUDA 可用性
+4. 独立输出目录避免冲突
 
 原有改进:
-1. ✅ 使用相邻态交换 (swap_mode='neighbors')
-2. ✅ 重新设计温度梯度（目标接受率 25-35%）
-3. ✅ 增加采样时间（500 ps → 10 ns）
-4. ✅ 扩大温度范围（300-600K）
-5. ✅ 增加副本数（6 → 8）
+1. 使用相邻态交换 (swap_mode='neighbors')
+2. 重新设计温度梯度（目标接受率 25-35%）
+3. 增加采样时间（500 ps → 10 ns）
+4. 扩大温度范围（300-600K）
+5. 增加副本数（6 → 8）
 """
 
 import pickle
@@ -53,7 +53,7 @@ try:
     print(f"可用平台: {', '.join(platform_names)}")
 
     if not cuda_available:
-        print("\n❌ 错误：未检测到 CUDA 平台！")
+        print("\n[FAIL] 错误：未检测到 CUDA 平台！")
         print("可能原因：")
         print("  1. CUDA 未安装或未正确配置")
         print("  2. OpenMM CUDA 支持未安装")
@@ -61,12 +61,12 @@ try:
         print("  conda install -c conda-forge openmm cudatoolkit")
         exit(1)
 
-    print(f"✅ CUDA 平台可用")
+    print(f"[OK] CUDA 平台可用")
     print(f"  - femto 库会自动使用 mixed 精度模式")
     print(f"  - 预计速度提升：10-20 倍（相比 CPU）")
 
 except Exception as e:
-    print(f"\n❌ CUDA 检查失败: {e}")
+    print(f"\n[FAIL] CUDA 检查失败: {e}")
     print("请确保：")
     print("  1. 服务器有 NVIDIA GPU")
     print("  2. CUDA 驱动已安装")
@@ -127,7 +127,7 @@ equilibrated_coords = femto.md.simulate.simulate_state(
     stages=equilibration_stages,
     platform='CUDA'
 )
-print("✅ 平衡化完成！")
+print("[OK] 平衡化完成！")
 
 # =====================================================================
 # 第 1 步：优化温度梯度
@@ -147,7 +147,7 @@ temperatures = [
     for i in range(n_replicas)
 ]
 
-print(f"\n✅ 新温度梯度 ({n_replicas} 副本，几何分布):")
+print(f"\n[OK] 新温度梯度 ({n_replicas} 副本，几何分布):")
 for i, T in enumerate(temperatures):
     print(f"  State {i}: {T.value_in_unit(openmm.unit.kelvin):.1f} K")
 
@@ -203,8 +203,8 @@ hremd_config = femto.md.config.HREMD(
     temperature=T_min,
     n_warmup_steps=5000,          # 10 ps warmup
     n_steps_per_cycle=500,        # 1 ps per cycle（增加到1ps）
-    n_cycles=50000,               # 50000 cycles = 50 ns 采样 ✅
-    swap_mode='neighbours',       # ✅ 改为相邻态交换！（注意英式拼写）
+    n_cycles=50000,               # 50000 cycles = 50 ns 采样
+    swap_mode='neighbours',       # 改为相邻态交换！（注意英式拼写）
     max_swaps=None,
     trajectory_interval=20,       # 每 20 cycles = 20 ps 保存一次
     checkpoint_interval=100,
@@ -215,18 +215,18 @@ warmup_time_ps = hremd_config.n_warmup_steps * 2 / 1000
 sampling_time_ps = hremd_config.n_cycles * hremd_config.n_steps_per_cycle * 2 / 1000
 total_time_ps = warmup_time_ps + sampling_time_ps
 
-print(f"✅ 优化后的 HREMD 配置:")
+print(f"[OK] 优化后的 HREMD 配置:")
 print(f"  - Warmup: {warmup_time_ps:.1f} ps")
 print(f"  - 每轮步数: {hremd_config.n_steps_per_cycle} 步 = {hremd_config.n_steps_per_cycle * 2 / 1000:.2f} ps")
 print(f"  - 总轮数: {hremd_config.n_cycles}")
-print(f"  - 采样时间: {sampling_time_ps:.1f} ps = {sampling_time_ps/1000:.1f} ns ✅")
+print(f"  - 采样时间: {sampling_time_ps:.1f} ps = {sampling_time_ps/1000:.1f} ns")
 print(f"  - 总模拟时间: {total_time_ps:.1f} ps = {total_time_ps/1000:.1f} ns")
-print(f"  - 交换模式: neighbours (相邻态，{n_replicas-1} 对) ✅")
+print(f"  - 交换模式: neighbours (相邻态，{n_replicas-1} 对)")
 print(f"  - 轨迹保存: 每 {hremd_config.trajectory_interval} 轮 = {hremd_config.trajectory_interval * hremd_config.n_steps_per_cycle * 2 / 1000:.1f} ps")
 
-print(f"\n⚡ 预计运行时间 (GPU): ~20-30 分钟")
+print(f"\n预计运行时间 (GPU): ~20-30 分钟")
 print(f"   （相比 CPU 版本快 10-20 倍）")
-print(f"\n💡 提示：")
+print(f"\n提示：")
 print(f"   - 确保 GPU 显存充足（6个副本约需 1-2 GB）")
 print(f"   - 可用 nvidia-smi 监控 GPU 使用情况")
 
@@ -254,7 +254,7 @@ try:
     )
 
     print("\n" + "="*60)
-    print("✅ HREMD 完成！")
+    print("[OK] HREMD 完成！")
     print("="*60)
     print(f"输出文件:")
     print(f"  - {output_dir}/samples.arrow")
@@ -265,12 +265,12 @@ try:
 
 except Exception as e:
     print("\n" + "="*60)
-    print("❌ HREMD 运行失败")
+    print("[FAIL] HREMD 运行失败")
     print("="*60)
     print(f"错误信息: {e}")
     import traceback
     traceback.print_exc()
-    print("\n💡 调试建议:")
+    print("\n提示: 调试建议")
     print("  1. 检查 GPU 显存是否充足: nvidia-smi")
     print("  2. 尝试减少副本数（n_replicas）")
     print("  3. 如果 GPU 问题无法解决，可回退到 CPU 版本")

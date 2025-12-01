@@ -82,15 +82,15 @@ class EvaluationMetrics:
         ]
 
         if self.js_divergence is not None:
-            status = "✅ 通过" if self.js_divergence < 0.1 else "⚠️ 需关注"
+            status = "[OK] 通过" if self.js_divergence < 0.1 else "[WARN] 需关注"
             lines.append(f"  块间JS散度: {self.js_divergence:.4f} (判据 < 0.1) {status}")
 
         if self.half_similarity is not None:
-            status = "✅ 通过" if self.half_similarity > 0.9 else "⚠️ 需关注"
+            status = "[OK] 通过" if self.half_similarity > 0.9 else "[WARN] 需关注"
             lines.append(f"  前后半分布相似度: {self.half_similarity:.4f} (判据 > 0.9) {status}")
 
         if self.convergence_reached is not None:
-            status = "✅ 已收敛" if self.convergence_reached else "⚠️ 可能未收敛"
+            status = "[OK] 已收敛" if self.convergence_reached else "[WARN] 可能未收敛"
             lines.append(f"  累积指标收敛: {status}")
 
         lines.extend([
@@ -105,7 +105,7 @@ class EvaluationMetrics:
 
         if self.n_eff_autocorr is not None:
             ratio = self.n_eff_autocorr / self.n_frames * 100 if self.n_frames > 0 else 0
-            status = "✅ 充足" if self.n_eff_autocorr > 100 else "⚠️ 不足"
+            status = "[OK] 充足" if self.n_eff_autocorr > 100 else "[WARN] 不足"
             lines.append(f"  有效样本数: {self.n_eff_autocorr:.0f} ({ratio:.1f}%) {status}")
 
         lines.extend([
@@ -118,7 +118,7 @@ class EvaluationMetrics:
             lines.append(f"  发现构象聚类数: {self.n_clusters}")
 
         if self.n_transitions is not None:
-            status = "✅ 充足" if self.n_transitions >= 10 else "⚠️ 较少"
+            status = "[OK] 充足" if self.n_transitions >= 10 else "[WARN] 较少"
             lines.append(f"  状态转变次数: {self.n_transitions} {status}")
 
         if self.dihedral_coverage:
@@ -131,11 +131,11 @@ class EvaluationMetrics:
         ])
 
         if self.acceptance_rate is not None:
-            status = "✅ 理想" if 0.2 <= self.acceptance_rate <= 0.4 else "⚠️ 需调整"
+            status = "[OK] 理想" if 0.2 <= self.acceptance_rate <= 0.4 else "[WARN] 需调整"
             lines.append(f"  交换接受率: {self.acceptance_rate*100:.1f}% (理想20-40%) {status}")
 
         if self.n_roundtrips is not None:
-            status = "✅ 充足" if self.n_roundtrips >= 3 else "⚠️ 不足"
+            status = "[OK] 充足" if self.n_roundtrips >= 3 else "[WARN] 不足"
             lines.append(f"  Round-trip次数: {self.n_roundtrips} (判据 ≥ 3) {status}")
 
         lines.extend(["", "=" * 60])
@@ -176,12 +176,12 @@ class SamplingEvaluator:
     def load_trajectory(self, replica_idx: int = 0) -> bool:
         """加载指定replica的轨迹"""
         if not HAS_MDTRAJ:
-            print("❌ 需要安装mdtraj")
+            print("[FAIL] 需要安装mdtraj")
             return False
 
         traj_file = self.traj_dir / f"r{replica_idx}.dcd"
         if not traj_file.exists():
-            print(f"❌ 轨迹文件不存在: {traj_file}")
+            print(f"[FAIL] 轨迹文件不存在: {traj_file}")
             return False
 
         print(f"加载轨迹: {traj_file}")
@@ -192,7 +192,7 @@ class SamplingEvaluator:
         # 提取小分子轨迹
         ligand_atoms = self.traj.topology.select(self.ligand_selection)
         if len(ligand_atoms) == 0:
-            print(f"⚠️ 选择 '{self.ligand_selection}' 未找到原子")
+            print(f"[WARN] 选择 '{self.ligand_selection}' 未找到原子")
             self.ligand_traj = self.traj
         else:
             self.ligand_traj = self.traj.atom_slice(ligand_atoms)
@@ -251,7 +251,7 @@ class SamplingEvaluator:
         if self.dihedral_indices is not None and len(self.dihedral_indices) > 0:
             print(f"  检测到 {len(self.dihedral_indices)} 个可旋转二面角")
         else:
-            print("  ⚠️ 未检测到可旋转二面角")
+            print("  [WARN] 未检测到可旋转二面角")
 
         return dihedral_indices
 

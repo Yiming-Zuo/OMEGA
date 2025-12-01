@@ -26,3 +26,8 @@ OMEGA（OpenMM Enhanced-sampling General Architecture）是一个面向分子模
 - 使用 UTF-8 编码，直接使用中文注释
 - 遵循 PEP 8 风格指南
 - 使用 conventional commits 规范提交代码
+
+## Emoji 规则
+- 禁止在代码和文档中使用 emoji 或特殊图标符号
+- 使用纯文本标记替代：[OK], [WARN], [FAIL] 等
+- Markdown 文档中避免装饰性 emoji，保持简洁专业

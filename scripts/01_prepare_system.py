@@ -3,12 +3,12 @@
 步骤 1: 准备 Alanine Dipeptide 的显式溶剂系统（使用 femto 标准 API）
 
 改进要点：
-✅ 使用 mdtop.Topology 而不是 OpenMM topology
-✅ 使用 femto.md.prepare.prepare_system() 标准 API
-✅ 使用 femto.md.config.Prepare 配置类
-✅ 灵活指定溶质残基（支持多残基小分子/肽段）
-✅ 使用 PyMol 选择语法（topology.select()）
-✅ 完全符合 femto 文档规范
+- 使用 mdtop.Topology 而不是 OpenMM topology
+- 使用 femto.md.prepare.prepare_system() 标准 API
+- 使用 femto.md.config.Prepare 配置类
+- 灵活指定溶质残基（支持多残基小分子/肽段）
+- 使用 PyMol 选择语法（topology.select()）
+- 完全符合 femto 文档规范
 """
 
 import pickle
@@ -22,7 +22,7 @@ import femto.md.rest
 import femto.md.constants
 
 # =====================================================================
-# 💡 配置：指定哪些残基是溶质（可根据需要修改）
+# 配置：指定哪些残基是溶质（可根据需要修改）
 # =====================================================================
 # 对于 alanine dipeptide，所有三个残基都是溶质
 SOLUTE_RESIDUES = ["ACE", "ALA", "NME"]
@@ -145,7 +145,7 @@ print(f"✓ 方法 2: 通用方法 (not resn HOH) → {len(non_water_idxs)} 原�
 if set(solute_idxs) == set(non_water_idxs):
     print(f"✓ 验证通过: 两种方法选择的原子相同")
 else:
-    print(f"⚠️ 警告: 两种方法不一致")
+    print(f"[WARN] 警告: 两种方法不一致")
     print(f"  - 方法1 选中: {len(solute_idxs)} 原子")
     print(f"  - 方法2 选中: {len(non_water_idxs)} 原子")
     print(f"  - 差异原因: 可能有其他分子（如离子、辅因子）")
@@ -157,10 +157,10 @@ else:
 print("\n[5/6] 应用 REST2 缩放...")
 
 rest_config = femto.md.config.REST(
-    scale_bonds=False,      # ❌ REST2 不缩放键
-    scale_angles=False,     # ❌ REST2 不缩放角
-    scale_torsions=True,    # ✅ 缩放扭转（降低能垒）
-    scale_nonbonded=True    # ✅ 缩放非键合（静电和LJ）
+    scale_bonds=False,      # REST2 不缩放键
+    scale_angles=False,     # REST2 不缩放角
+    scale_torsions=True,    # 缩放扭转（降低能垒）
+    scale_nonbonded=True    # 缩放非键合（静电和LJ）
 )
 
 print(f"✓ REST2 配置:")
@@ -184,7 +184,7 @@ for force in system.getForces():
 if rest_params_found:
     print(f"✓ REST 全局参数已添加: {set(rest_params_found)}")
 else:
-    print(f"⚠️ 警告: 未检测到 REST 全局参数")
+    print(f"[WARN] 警告: 未检测到 REST 全局参数")
 
 # =====================================================================
 # 6. 保存系统（mdtop.Topology + OpenMM System）
@@ -213,7 +213,7 @@ print(f"✓ 盒子尺寸: {box_size:.2f} × {box_size:.2f} × {box_size:.2f} nm�
 # 总结
 # =====================================================================
 print("\n" + "="*60)
-print("✅ 系统准备完成！")
+print("[OK] 系统准备完成！")
 print("="*60)
 print(f"系统信息:")
 print(f"  - 总原子数: {len(topology.atoms)}")
@@ -226,13 +226,13 @@ print(f"  - REST2 已应用: 只缩放溶质的扭转+非键合")
 print(f"  - 盒子尺寸: {box_size:.2f} nm (cube)")
 print()
 print(f"使用的 API:")
-print(f"  ✅ mdtop.Topology (标准 topology 格式)")
-print(f"  ✅ femto.md.prepare.prepare_system() (标准溶剂化 API)")
-print(f"  ✅ femto.md.config.Prepare (配置类)")
-print(f"  ✅ topology.select() (PyMol 选择语法 - 灵活指定残基)")
-print(f"  ✅ femto.md.rest.apply_rest() (REST2 API)")
+print(f"  - mdtop.Topology (标准 topology 格式)")
+print(f"  - femto.md.prepare.prepare_system() (标准溶剂化 API)")
+print(f"  - femto.md.config.Prepare (配置类)")
+print(f"  - topology.select() (PyMol 选择语法 - 灵活指定残基)")
+print(f"  - femto.md.rest.apply_rest() (REST2 API)")
 print()
-print(f"💡 配置提示:")
+print(f"提示: 配置说明")
 print(f"  - 溶质残基可通过修改文件开头的 SOLUTE_RESIDUES 变量配置")
 if SOLUTE_RESIDUES:
     print(f"  - 当前配置: {SOLUTE_RESIDUES}")

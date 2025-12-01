@@ -349,9 +349,9 @@ def main():
     else:
         output_base = xyz_file.stem
 
-    print(f"\n🔄 正在转换：{xyz_file}")
-    print(f"📁 输出前缀：{output_base}")
-    print(f"🏷️  残基名称：{args.residue_name}\n")
+    print(f"\n正在转换：{xyz_file}")
+    print(f"输出前缀：{output_base}")
+    print(f"残基名称：{args.residue_name}\n")
 
     # 步骤 1：解析 xyz 文件
     print("步骤 1/5: 读取 xyz 文件...")

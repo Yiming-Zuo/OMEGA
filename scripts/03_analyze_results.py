@@ -3,10 +3,10 @@
 步骤 3 改进版: 分析优化后的 REST2 HREMD 结果
 
 修复:
-1. ✅ 正确处理相邻态交换矩阵（不是全对）
-2. ✅ 修复 u_kn 数据解析（支持1D和2D）
-3. ✅ 增强构象分析（计算自由能）
-4. ✅ 添加副本游走分析
+1. 正确处理相邻态交换矩阵（不是全对）
+2. 修复 u_kn 数据解析（支持1D和2D）
+3. 增强构象分析（计算自由能）
+4. 添加副本游走分析
 """
 
 import sys
@@ -23,7 +23,7 @@ try:
     HAS_MDTRAJ = True
 except ImportError:
     HAS_MDTRAJ = False
-    print("⚠️ mdtraj 未安装，将跳过轨迹分析")
+    print("[WARN] mdtraj 未安装，将跳过轨迹分析")
 
 print("="*60)
 print("Step 3 改进版: REST2 HREMD 结果分析")
@@ -36,10 +36,10 @@ print("\n[1/6] 加载 HREMD 采样数据...")
 
 samples_file = pathlib.Path('outputs_v2_gpu/samples.arrow')
 if not samples_file.exists():
-    print(f"⚠️ 未找到 {samples_file}，尝试使用旧版本...")
+    print(f"[WARN] 未找到 {samples_file}，尝试使用旧版本...")
     samples_file = pathlib.Path('outputs/samples.arrow')
     if not samples_file.exists():
-        print(f"❌ 错误: 未找到采样文件")
+        print(f"[FAIL] 错误: 未找到采样文件")
         sys.exit(1)
 
 with pyarrow.OSFile(str(samples_file), 'rb') as file:
@@ -81,7 +81,7 @@ if 'n_proposed_swaps' in df.columns and 'n_accepted_swaps' in df.columns:
                 for j in range(i+1, n_replicas):
                     if prop_matrix[i, j] > 0:
                         rate = acc_matrix[i, j] / prop_matrix[i, j]
-                        status = "✅" if 0.20 <= rate <= 0.40 else "⚠️"
+                        status = "[OK]" if 0.20 <= rate <= 0.40 else "[WARN]"
                         print(f"    State {i} ↔ {j}: {rate*100:.1f}% (提议={int(prop_matrix[i, j])}, 接受={int(acc_matrix[i, j])}) {status}")
                         if j == i + 1:  # 相邻态
                             acceptance_rates_list.append(rate)
@@ -124,7 +124,7 @@ if 'n_proposed_swaps' in df.columns and 'n_accepted_swaps' in df.columns:
 
                 print(f"\n  相邻态接受率:")
                 for i, rate in enumerate(acceptance_rates):
-                    status = "✅" if 0.20 <= rate <= 0.40 else "⚠️"
+                    status = "[OK]" if 0.20 <= rate <= 0.40 else "[WARN]"
                     print(f"    State {i} ↔ {i+1}: {100.0 * rate:.2f}% {status}")
 
     # 绘图
@@ -144,7 +144,7 @@ if 'n_proposed_swaps' in df.columns and 'n_accepted_swaps' in df.columns:
 
         plt.tight_layout()
         plt.savefig('acceptance_rates_v2.png', dpi=300)
-        print(f"\n✅ 保存: acceptance_rates_v2.png")
+        print(f"\n[OK] 保存: acceptance_rates_v2.png")
 
 # =====================================================================
 # 3. 分析副本游走（Replica Random Walk）
@@ -183,12 +183,12 @@ if 'replica_to_state_idx' in df.columns and n_replicas is not None:
 
     plt.tight_layout()
     plt.savefig('replica_walk_v2.png', dpi=300)
-    print(f"✅ 保存: replica_walk_v2.png")
+    print(f"[OK] 保存: replica_walk_v2.png")
 
     print(f"\n  状态覆盖度:")
     for i in range(n_replicas):
         coverage_pct = 100.0 * state_coverage[i] / n_replicas
-        status = "✅" if coverage_pct > 80 else "⚠️"
+        status = "[OK]" if coverage_pct > 80 else "[WARN]"
         print(f"    Replica {i}: {state_coverage[i]}/{n_replicas} states ({coverage_pct:.1f}%) {status}")
 
 # =====================================================================
@@ -275,7 +275,7 @@ if energies is not None and energies.size > 0:
 
     plt.tight_layout()
     plt.savefig('energy_convergence_v2.png', dpi=300)
-    print(f"\n✅ 保存: energy_convergence_v2.png")
+    print(f"\n[OK] 保存: energy_convergence_v2.png")
 
 # =====================================================================
 # 5. 分析扭转角（增强版）
@@ -356,7 +356,7 @@ if HAS_MDTRAJ:
 
         plt.tight_layout()
         plt.savefig('ramachandran_v2.png', dpi=300)
-        print(f"\n✅ 保存: ramachandran_v2.png")
+        print(f"\n[OK] 保存: ramachandran_v2.png")
 
         # ========== 构象区域定义（基于文献 + 实际热图微调）==========
         # C7eq (七元环氢键，equatorial)
@@ -387,7 +387,7 @@ if HAS_MDTRAJ:
         other_frac = (~(c7eq_mask | c7ax_mask | pii_mask | alphaR_mask | beta_mask | alphaL_mask)).sum() / len(phi_deg)
 
         print(f"\n  ══════════════════════════════════════")
-        print(f"  📊 构象占比统计 (300K)")
+        print(f"  构象占比统计 (300K)")
         print(f"  ══════════════════════════════════════")
         print(f"    C7eq (七元环 equatorial): {100.0 * c7eq_frac:6.1f}%")
         print(f"    C7ax (七元环 axial):      {100.0 * c7ax_frac:6.1f}%")
@@ -423,12 +423,12 @@ if HAS_MDTRAJ:
             print(f"\n  ✓ 轨迹时间间隔: {dt_ps} ps/帧")
         else:
             dt_ps = 20.0  # 默认假设
-            print(f"\n  ⚠️  无法读取时间间隔，假设为 {dt_ps} ps/帧")
+            print(f"\n  [WARN] 无法读取时间间隔，假设为 {dt_ps} ps/帧")
 
         total_time_ns = len(phi_deg) * dt_ps / 1000.0
 
         print(f"\n  ══════════════════════════════════════")
-        print(f"  🔄 构象转换统计")
+        print(f"  构象转换统计")
         print(f"  ══════════════════════════════════════")
         print(f"    总转换次数:           {transitions_all} 次")
         print(f"    C7eq ↔ C7ax 转换:     {c7_transitions} 次")
@@ -468,7 +468,7 @@ if HAS_MDTRAJ:
 
         plt.tight_layout()
         plt.savefig('conformation_timeline_v2.png', dpi=300)
-        print(f"\n✅ 保存: conformation_timeline_v2.png")
+        print(f"\n[OK] 保存: conformation_timeline_v2.png")
 
         # ========== 构象转移矩阵（粗粒度 Markov 分析）==========
         from collections import defaultdict
@@ -521,9 +521,9 @@ print(f"\n交换效率:")
 if acceptance_rates is not None and len(acceptance_rates) > 0:
     avg_rate = np.mean(acceptance_rates)
     if 0.20 <= avg_rate <= 0.40:
-        print(f"  ✅ 平均相邻态接受率: {100*avg_rate:.1f}% (理想范围)")
+        print(f"  [OK] 平均相邻态接受率: {100*avg_rate:.1f}% (理想范围)")
     else:
-        print(f"  ⚠️ 平均相邻态接受率: {100*avg_rate:.1f}%")
+        print(f"  [WARN] 平均相邻态接受率: {100*avg_rate:.1f}%")
         if avg_rate > 0.40:
             print(f"     → 建议: 增大温度间隔")
         else:
@@ -536,9 +536,9 @@ if phi_deg is not None:
     print(f"  - 转换次数: {transitions_all}")
 
     if transitions_all < 5:
-        print(f"  ⚠️ 转换次数太少，需要更长采样时间")
+        print(f"  [WARN] 转换次数太少，需要更长采样时间")
     elif transitions_all > 20:
-        print(f"  ✅ 转换次数充足，采样较为可靠")
+        print(f"  [OK] 转换次数充足，采样较为可靠")
 
 print(f"\n输出文件:")
 print(f"  ✓ acceptance_rates_v2.png")
@@ -549,4 +549,4 @@ if phi_deg is not None:
     print(f"  ✓ conformation_timeline_v2.png")
 
 print("="*60)
-print("\n✅ 分析完成！")
+print("\n[OK] 分析完成！")

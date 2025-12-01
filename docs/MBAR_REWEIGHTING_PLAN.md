@@ -1,6 +1,6 @@
 # REST2 HREMD 数据的 MBAR 重加权完整方案
 
-## 📋 **项目概述**
+## **项目概述**
 
 ### 目标
 对 REST2 HREMD 模拟的所有副本数据进行严格的统计力学重加权，恢复目标体系（State 0, 300K, λ=1）的物理分布。
@@ -20,14 +20,14 @@ outputs_v2_gpu/
 ```
 
 ### 数据对齐验证
-- ✅ **Cycle与Frame对应关系**：`frame_index = cycle // 20`
-- ✅ **总帧数一致性**：50000 cycles ÷ 20 = 2500 frames
-- ✅ **时间跨度**：2500 frames × 1 ps = 2.5 ns（每个replica）
-- ✅ **总采样量**：6 replicas × 2500 frames = 15000 帧
+- **Cycle与Frame对应关系**：`frame_index = cycle // 20`
+- **总帧数一致性**：50000 cycles ÷ 20 = 2500 frames
+- **时间跨度**：2500 frames × 1 ps = 2.5 ns（每个replica）
+- **总采样量**：6 replicas × 2500 frames = 15000 帧
 
 ---
 
-## 🎯 **方法论：MBAR重加权理论**
+## **方法论：MBAR重加权理论**
 
 ### REST2的物理图景
 
@@ -75,12 +75,12 @@ w_n^(0) = exp[-β₀ U_0(x_n)] / Σ_k N_k exp[f_k - β₀ U_k(x_n)]
 - `β₀ U_k(x_n)`：femto记录的`u_kn[n, k]`（约化能量）
 
 **重要**：
-- ❌ **不涉及温度比值** β_k/β₀（这是温度REMD的公式）
-- ✅ **只有能量差** U_0(x) - U_k(x)，都在β₀温度下
+- **不涉及温度比值** β_k/β₀（这是温度REMD的公式）
+- **只有能量差** U_0(x) - U_k(x)，都在β₀温度下
 
 ---
 
-## 🔧 **实现方案：逐步流程**
+## **实现方案：逐步流程**
 
 ### Phase 1: 数据准备与子采样
 
@@ -101,7 +101,7 @@ replica_to_state = df['replica_to_state_idx']  # [cycle][replica]
 
 #### 步骤1.2：逐Replica子采样（关键修正）
 
-**❌ 错误做法**：按state分组后做时间序列分析
+**[FAIL] 错误做法**：按state分组后做时间序列分析
 ```python
 # 这会破坏时间连续性！
 for state_k in range(6):
@@ -109,7 +109,7 @@ for state_k in range(6):
     g = pymbar.timeseries.statistical_inefficiency(energies)  # 错误！
 ```
 
-**✅ 正确做法**：对每个replica的完整轨迹单独子采样
+**[OK] 正确做法**：对每个replica的完整轨迹单独子采样
 ```python
 subsampled_frames = []
 
@@ -146,9 +146,9 @@ for replica in range(6):
 ```
 
 **理论依据**：
-- ✅ 单个replica的轨迹是连续的马尔可夫过程
-- ✅ 自相关函数的计算要求时间连续性
-- ✅ 副本交换不影响单个replica的时间演化（只改变哈密顿量）
+- 单个replica的轨迹是连续的马尔可夫过程
+- 自相关函数的计算要求时间连续性
+- 副本交换不影响单个replica的时间演化（只改变哈密顿量）
 
 #### 步骤1.3：构建MBAR输入
 
@@ -172,7 +172,7 @@ for n, frame in enumerate(subsampled_frames):
 # 一致性检查
 assert N_k.sum() == N_total
 assert u_kn_mbar.shape == (6, N_total)
-print(f"\n✅ MBAR输入矩阵: {u_kn_mbar.shape}, 总样本数: {N_total}")
+print(f"\n[OK] MBAR输入矩阵: {u_kn_mbar.shape}, 总样本数: {N_total}")
 ```
 
 ---
@@ -187,7 +187,7 @@ import pymbar
 # 初始化MBAR求解器
 mbar = pymbar.MBAR(u_kn_mbar, N_k, verbose=True, maximum_iterations=10000)
 
-print("\n✅ MBAR收敛完成")
+print("\n[OK] MBAR收敛完成")
 print(f"  迭代次数: {mbar.iterations}")
 ```
 
@@ -216,18 +216,18 @@ print("\n相邻State Overlap:")
 for i in range(5):
     overlap = overlap_matrix['matrix'][i, i+1]
     if overlap > 0.05:
-        status = "✅ 良好"
+        status = "[OK] 良好"
     elif overlap > 0.03:
-        status = "⚠️ 偏低"
+        status = "[WARN] 偏低"
     else:
-        status = "❌ 太低（MBAR可能不可靠）"
+        status = "[FAIL] 太低（MBAR可能不可靠）"
     print(f"  State {i} ↔ {i+1}: {overlap:.3f} {status}")
 ```
 
 **健康阈值**：
-- ✅ Overlap > 0.05：良好
-- ⚠️ 0.03 < Overlap < 0.05：勉强可用
-- ❌ Overlap < 0.03：不可靠，需要重新设计λ梯度
+- Overlap > 0.05：良好
+- 0.03 < Overlap < 0.05：勉强可用
+- Overlap < 0.03：不可靠，需要重新设计λ梯度
 
 #### 步骤2.3：诊断检查2 - 权重有效性
 
@@ -235,7 +235,7 @@ for i in range(5):
 # 获取State 0的权重（pymbar 4.x API）
 # W_nk 是 [N_samples, K_states] 格式
 # W_nk[n, k] = 样本n在目标state k下的权重
-weights_state0 = mbar.W_nk[:, 0]  # ✅ 取第一列（State 0）
+weights_state0 = mbar.W_nk[:, 0]  # [OK] 取第一列（State 0）
 
 # 计算有效样本数（ESS）
 ESS = (weights_state0.sum())**2 / (weights_state0**2).sum()
@@ -259,11 +259,11 @@ print(f"  前{n_90}个样本贡献90%权重 ({100*n_90/len(weights_state0):.1f}%
 
 # 健康判断
 if efficiency > 0.1:
-    print("  ✅ 权重分布健康")
+    print("  [OK] 权重分布健康")
 elif efficiency > 0.05:
-    print("  ⚠️ 权重略集中，可用但需谨慎")
+    print("  [WARN] 权重略集中，可用但需谨慎")
 else:
-    print("  ❌ 权重严重集中，结果可能不可靠")
+    print("  [FAIL] 权重严重集中，结果可能不可靠")
 ```
 
 #### 步骤2.4：诊断检查3 - 能量分布
@@ -301,9 +301,9 @@ for k in range(6):
 # REST2预期：λ越小，有效温度越高，平均能量越低（削弱能垒）
 print("\n能量趋势检查:")
 if mean_energies[0] > mean_energies[-1]:
-    print("  ✅ State 0能量高于State 5（符合REST2预期）")
+    print("  [OK] State 0能量高于State 5（符合REST2预期）")
 else:
-    print("  ⚠️ 能量趋势异常")
+    print("  [WARN] 能量趋势异常")
 ```
 
 ---
@@ -360,7 +360,7 @@ phi_all = np.array(phi_all)
 psi_all = np.array(psi_all)
 weights_all = np.array(weights_all)
 
-print(f"\n✅ 完成：{len(phi_all)} 个构象的二面角计算")
+print(f"\n[OK] 完成：{len(phi_all)} 个构象的二面角计算")
 ```
 
 #### 步骤3.2：生成重加权Ramachandran图
@@ -437,7 +437,7 @@ plt.colorbar(im2, ax=ax, label='Probability Density')
 
 plt.tight_layout()
 plt.savefig('ramachandran_mbar_comparison.png', dpi=300)
-print("\n✅ 保存: ramachandran_mbar_comparison.png")
+print("\n[OK] 保存: ramachandran_mbar_comparison.png")
 ```
 
 #### 步骤3.3：计算构象占比
@@ -486,7 +486,7 @@ if conf_fractions['C7eq'] > 0 and conf_fractions['C7ax'] > 0:
 
 ---
 
-## 📊 **输出结果**
+## **输出结果**
 
 ### 文件列表
 
@@ -531,32 +531,32 @@ if conf_fractions['C7eq'] > 0 and conf_fractions['C7ax'] > 0:
 
 ---
 
-## ✅ **成功指标**
+## **成功指标**
 
 ### 必须满足的条件
 
 1. **子采样合理性**
-   - ✅ 每个replica的统计不相关时间 g < 100
-   - ✅ 总有效样本数 N_eff > 1000
-   - ✅ 各state至少有50个独立样本
+   - 每个replica的统计不相关时间 g < 100
+   - 总有效样本数 N_eff > 1000
+   - 各state至少有50个独立样本
 
 2. **MBAR收敛性**
-   - ✅ 迭代收敛（< 10000次）
-   - ✅ 相邻state overlap > 0.03
-   - ✅ 权重ESS > 10% × 总样本数
+   - 迭代收敛（< 10000次）
+   - 相邻state overlap > 0.03
+   - 权重ESS > 10% × 总样本数
 
 3. **物理合理性**
-   - ✅ C7eq占比 > C7ax（文献共识）
-   - ✅ ΔG(C7ax-C7eq) ≈ 0.6-1.2 kcal/mol
-   - ✅ Ramachandran图更平滑、覆盖更全面
+   - C7eq占比 > C7ax（文献共识）
+   - ΔG(C7ax-C7eq) ≈ 0.6-1.2 kcal/mol
+   - Ramachandran图更平滑、覆盖更全面
 
 ### 预期改进
 
 相比只使用Replica 0：
-- 📈 **有效样本数增加** 2-5倍（即使子采样后）
-- 📈 **构象空间覆盖更全面**（高λ态采样了稀有区域）
-- 📈 **自由能精度提高**（更好的统计）
-- 📈 **不确定性降低**（更多独立样本）
+-  **有效样本数增加** 2-5倍（即使子采样后）
+-  **构象空间覆盖更全面**（高λ态采样了稀有区域）
+-  **自由能精度提高**（更好的统计）
+-  **不确定性降低**（更多独立样本）
 
 ---
 
@@ -635,7 +635,7 @@ if np.abs(u_kn_mbar).max() > 1e6:
 
 ---
 
-## 🔬 **与现有分析的对比**
+## **与现有分析的对比**
 
 ### 当前分析（03_analyze_results_v2.py）
 
@@ -645,10 +645,10 @@ if np.abs(u_kn_mbar).max() > 1e6:
 - 没有利用其他副本的数据
 
 **问题**：
-- ❌ 浪费了5个副本（12500帧）的数据
-- ❌ 忽略了副本交换带来的增强采样
-- ❌ Replica 0不一定总在State 0（动态交换）
-- ❌ 统计精度受限于单个副本
+- 浪费了5个副本（12500帧）的数据
+- 忽略了副本交换带来的增强采样
+- Replica 0不一定总在State 0（动态交换）
+- 统计精度受限于单个副本
 
 ### MBAR方案
 
@@ -658,14 +658,14 @@ if np.abs(u_kn_mbar).max() > 1e6:
 - 通过MBAR严格重加权恢复State 0分布
 
 **优势**：
-- ✅ 利用高λ态采样的稀有构象（通过重加权映射到State 0）
-- ✅ 有效样本数增加（即使子采样后）
-- ✅ 理论上严格（满足统计力学平衡条件）
-- ✅ 可以计算任意state的期望值
+- 利用高λ态采样的稀有构象（通过重加权映射到State 0）
+- 有效样本数增加（即使子采样后）
+- 理论上严格（满足统计力学平衡条件）
+- 可以计算任意state的期望值
 
 ---
 
-## 💻 **实现文件说明**
+## **实现文件说明**
 
 ### 主脚本：`04_mbar_reweighting.py`
 
@@ -676,11 +676,11 @@ if np.abs(u_kn_mbar).max() > 1e6:
 步骤 4: REST2 HREMD 的 MBAR 重加权分析
 
 基于评审意见的完整修正版本：
-1. ✅ 对每个replica的完整轨迹单独子采样
-2. ✅ 正确的MBAR权重索引 mbar.W_nk[:, 0] (pymbar 4.x)
-3. ✅ N_k在子采样后统计
-4. ✅ 验证cycle→frame映射
-5. ✅ 完整的Phase 2诊断检查
+1. [OK] 对每个replica的完整轨迹单独子采样
+2. [OK] 正确的MBAR权重索引 mbar.W_nk[:, 0] (pymbar 4.x)
+3. [OK] N_k在子采样后统计
+4. [OK] 验证cycle→frame映射
+5. [OK] 完整的Phase 2诊断检查
 """
 
 # Part 1: 数据加载与验证
@@ -697,7 +697,7 @@ if np.abs(u_kn_mbar).max() > 1e6:
 ---
 
 
-## 📚 **后续扩展方向**
+## **后续扩展方向**
 
 ### Phase 2+ 可选功能
 

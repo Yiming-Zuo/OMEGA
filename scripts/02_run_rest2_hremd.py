@@ -3,11 +3,11 @@
 步骤 2 改进版: 运行 REST2 HREMD 模拟
 
 改进:
-1. ✅ 使用相邻态交换 (swap_mode='neighbors')
-2. ✅ 重新设计温度梯度（目标接受率 25-35%）
-3. ✅ 增加采样时间（500 ps → 10 ns）
-4. ✅ 扩大温度范围（300-600K）
-5. ✅ 增加副本数（6 → 8）
+1. 使用相邻态交换 (swap_mode='neighbors')
+2. 重新设计温度梯度（目标接受率 25-35%）
+3. 增加采样时间（500 ps → 10 ns）
+4. 扩大温度范围（300-600K）
+5. 增加副本数（6 → 8）
 """
 
 import pickle
@@ -81,7 +81,7 @@ equilibrated_coords = femto.md.simulate.simulate_state(
     stages=equilibration_stages,
     platform='CPU'
 )
-print("✅ 平衡化完成！")
+print("[OK] 平衡化完成！")
 
 # =====================================================================
 # 第 1 步：优化温度梯度
@@ -101,7 +101,7 @@ temperatures = [
     for i in range(n_replicas)
 ]
 
-print(f"\n✅ 新温度梯度 ({n_replicas} 副本，几何分布):")
+print(f"\n[OK] 新温度梯度 ({n_replicas} 副本，几何分布):")
 for i, T in enumerate(temperatures):
     print(f"  State {i}: {T.value_in_unit(openmm.unit.kelvin):.1f} K")
 
@@ -157,8 +157,8 @@ hremd_config = femto.md.config.HREMD(
     temperature=T_min,
     n_warmup_steps=5000,          # 10 ps warmup
     n_steps_per_cycle=500,        # 1 ps per cycle（增加到1ps）
-    n_cycles=2000,               # 10000 cycles = 10 ns 采样 ✅
-    swap_mode='neighbours',       # ✅ 改为相邻态交换！（注意英式拼写）
+    n_cycles=2000,               # 10000 cycles = 10 ns 采样
+    swap_mode='neighbours',       # 改为相邻态交换！（注意英式拼写）
     max_swaps=None,
     trajectory_interval=20,       # 每 20 cycles = 20 ps 保存一次
     checkpoint_interval=100,
@@ -169,16 +169,16 @@ warmup_time_ps = hremd_config.n_warmup_steps * 2 / 1000
 sampling_time_ps = hremd_config.n_cycles * hremd_config.n_steps_per_cycle * 2 / 1000
 total_time_ps = warmup_time_ps + sampling_time_ps
 
-print(f"✅ 优化后的 HREMD 配置:")
+print(f"[OK] 优化后的 HREMD 配置:")
 print(f"  - Warmup: {warmup_time_ps:.1f} ps")
 print(f"  - 每轮步数: {hremd_config.n_steps_per_cycle} 步 = {hremd_config.n_steps_per_cycle * 2 / 1000:.2f} ps")
 print(f"  - 总轮数: {hremd_config.n_cycles}")
-print(f"  - 采样时间: {sampling_time_ps:.1f} ps = {sampling_time_ps/1000:.1f} ns ✅")
+print(f"  - 采样时间: {sampling_time_ps:.1f} ps = {sampling_time_ps/1000:.1f} ns")
 print(f"  - 总模拟时间: {total_time_ps:.1f} ps = {total_time_ps/1000:.1f} ns")
-print(f"  - 交换模式: neighbours (相邻态，{n_replicas-1} 对) ✅")
+print(f"  - 交换模式: neighbours (相邻态，{n_replicas-1} 对)")
 print(f"  - 轨迹保存: 每 {hremd_config.trajectory_interval} 轮 = {hremd_config.trajectory_interval * hremd_config.n_steps_per_cycle * 2 / 1000:.1f} ps")
 
-print(f"\n⚠️ 预计运行时间（CPU）: ~2-4 小时")
+print(f"\n[WARN] 预计运行时间（CPU）: ~2-4 小时")
 print(f"   （如有GPU可改为 platform='CUDA'，速度提升10-20倍）")
 
 # =====================================================================
@@ -205,7 +205,7 @@ try:
     )
 
     print("\n" + "="*60)
-    print("✅ HREMD 完成！")
+    print("[OK] HREMD 完成！")
     print("="*60)
     print(f"输出文件:")
     print(f"  - {output_dir}/samples.arrow")
@@ -216,7 +216,7 @@ try:
 
 except Exception as e:
     print("\n" + "="*60)
-    print("❌ HREMD 运行失败")
+    print("[FAIL] HREMD 运行失败")
     print("="*60)
     print(f"错误信息: {e}")
     import traceback

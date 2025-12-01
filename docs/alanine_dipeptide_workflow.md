@@ -1,43 +1,43 @@
 # REST2 测试：Alanine Dipeptide（显式溶剂，使用 femto 标准 API）
 
-## 📋 测试目标
+## 测试目标
 
 验证 femto 的 REST2 实现在显式溶剂中的性能，并展示 **femto 标准 API 的正确使用方式**：
 
-### ✅ REST2 特性
-- ✅ 只缩放扭转和非键合项（不缩放键和角）
-- ✅ 数值稳定性好（水分子不受影响）
-- ✅ 计算效率高（减少不必要的 CustomForce）
-- ✅ 采样增强有效（构象转换加速）
+### REST2 特性
+- 只缩放扭转和非键合项（不缩放键和角）
+- 数值稳定性好（水分子不受影响）
+- 计算效率高（减少不必要的 CustomForce）
+- 采样增强有效（构象转换加速）
 
-### ✅ femto 标准 API（v0.3.0+）
-- ✅ 使用 `mdtop.Topology` 而不是 OpenMM topology
-- ✅ 使用 `femto.md.prepare.prepare_system()` 进行溶剂化
-- ✅ 使用 `femto.md.config.Prepare` 配置类
-- ✅ 使用 `topology.select()` PyMol 语法选择原子
-- ✅ 完全符合 [femto 官方文档](https://psivant.github.io/femto/latest/guide-md/)
+### femto 标准 API（v0.3.0+）
+- 使用 `mdtop.Topology` 而不是 OpenMM topology
+- 使用 `femto.md.prepare.prepare_system()` 进行溶剂化
+- 使用 `femto.md.config.Prepare` 配置类
+- 使用 `topology.select()` PyMol 语法选择原子
+- 完全符合 [femto 官方文档](https://psivant.github.io/femto/latest/guide-md/)
 
-## 📁 文件结构
+## 文件结构
 
 ```
 test_alanine_dipeptide/
 ├── README.md                      # 本文件
 ├── alanine-dipeptide.pdb         # 输入结构（真空）
-├── 01_prepare_system.py          # ✨ 使用 femto API 准备系统
-├── 02_run_rest2_hremd.py         # ✨ 运行 REST2 HREMD
+├── 01_prepare_system.py          #  使用 femto API 准备系统
+├── 02_run_rest2_hremd.py         #  运行 REST2 HREMD
 ├── 03_analyze_results.py         # 分析结果
 ├── system.xml                    # OpenMM System（运行后生成）
 ├── system.pdb                    # 溶剂化后的 PDB（运行后生成）
-├── topology.pkl                  # ✨ mdtop.Topology 对象（运行后生成）
+├── topology.pkl                  #  mdtop.Topology 对象（运行后生成）
 └── outputs/                      # 模拟输出（运行后生成）
     ├── samples.arrow             # 采样统计
     ├── trajectories/r*.dcd       # 各副本轨迹
     └── checkpoint.pkl            # 检查点
 ```
 
-**✨ = 使用 femto 标准 API 实现**
+** = 使用 femto 标准 API 实现**
 
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 准备系统（~1 分钟）
 
@@ -48,17 +48,17 @@ python 01_prepare_system.py
 
 **使用的 femto API**:
 ```python
-# ✅ 使用 mdtop.Topology
+# [OK] 使用 mdtop.Topology
 topology = mdtop.Topology.from_file('alanine-dipeptide.pdb')
 
-# ✅ 使用 femto.md.config.Prepare 配置类
+# [OK] 使用 femto.md.config.Prepare 配置类
 config = femto.md.config.Prepare(
     water_model='tip3p',
     box_padding=10.0 * openmm.unit.angstrom,
     box_shape='cube'
 )
 
-# ✅ 使用 femto.md.prepare.prepare_system() 标准 API
+# [OK] 使用 femto.md.prepare.prepare_system() 标准 API
 topology, system = femto.md.prepare.prepare_system(
     receptor=None,
     ligand_1=topology,  # alanine dipeptide 作为 ligand
@@ -66,10 +66,10 @@ topology, system = femto.md.prepare.prepare_system(
     config=config
 )
 
-# ✅ 使用 PyMol 选择语法
+# [OK] 使用 PyMol 选择语法
 solute_idxs = topology.select(f"resn {femto.md.constants.LIGAND_1_RESIDUE_NAME}")
 
-# ✅ 应用 REST2
+# [OK] 应用 REST2
 femto.md.rest.apply_rest(system, solute_idxs, rest_config)
 ```
 
@@ -79,10 +79,10 @@ femto.md.rest.apply_rest(system, solute_idxs, rest_config)
 - `topology.pkl` - **mdtop.Topology 对象（含坐标）**
 
 **检查点**:
-- ✅ 应该看到 "系统总原子数: ~3000"
-- ✅ 应该看到 "溶质原子: 22 (L01)"
-- ✅ 应该看到 "REST 全局参数已添加: {'bm_b0', 'sqrt<bm_b0>'}"
-- ✅ 应该看到 "使用的 API: mdtop.Topology, prepare_system(), ..."
+- 应该看到 "系统总原子数: ~3000"
+- 应该看到 "溶质原子: 22 (L01)"
+- 应该看到 "REST 全局参数已添加: {'bm_b0', 'sqrt<bm_b0>'}"
+- 应该看到 "使用的 API: mdtop.Topology, prepare_system(), ..."
 
 ### 2. 运行 HREMD（~15-20 分钟 CPU / ~3-5 分钟 GPU）
 
@@ -110,9 +110,9 @@ python 02_run_rest2_hremd.py
 - `outputs/checkpoint.pkl` - 检查点（可用于续算）
 
 **检查点**:
-- ✅ 应该看到进度条从 0% 到 100%
-- ✅ 应该看到 "HREMD 完成！"
-- ✅ 不应该有 NaN 错误（REST2 的鲁棒性）
+- 应该看到进度条从 0% 到 100%
+- 应该看到 "HREMD 完成！"
+- 不应该有 NaN 错误（REST2 的鲁棒性）
 
 ### 3. 分析结果（~1 分钟）
 
@@ -126,11 +126,11 @@ python 03_analyze_results.py
 - `ramachandran.png` - φ/ψ 扭转角分布（如果安装了 mdtraj）
 
 **关键指标**:
-- ✅ 相邻态接受率：15-35%（理想范围）
-- ✅ 能量收敛：移动平均趋于稳定
-- ✅ 构象转换：观察到 C7eq ↔ C7ax 转换
+- 相邻态接受率：15-35%（理想范围）
+- 能量收敛：移动平均趋于稳定
+- 构象转换：观察到 C7eq ↔ C7ax 转换
 
-## 📊 预期结果
+## 预期结果
 
 ### 1. 交换接受率
 
@@ -138,9 +138,9 @@ python 03_analyze_results.py
 
 ```
 相邻态接受率:
-  State 0 ↔ 1: 25.3% ✅
-  State 1 ↔ 2: 22.8% ✅
-  State 2 ↔ 3: 19.5% ✅
+  State 0 ↔ 1: 25.3% [OK]
+  State 1 ↔ 2: 22.8% [OK]
+  State 2 ↔ 3: 19.5% [OK]
   ...
 ```
 
@@ -155,18 +155,18 @@ python 03_analyze_results.py
 - **C7ax** (αL): φ ~ 60°, ψ ~ -60°
 - REST2 应该能观察到这两种构象的转换
 
-## 🎯 改进优势（相比旧版代码）
+## 改进优势（相比旧版代码）
 
 ### 1. **符合 femto 0.3.0+ 标准**
 ```python
-# ❌ 旧版（不推荐）
+# [FAIL] 旧版（不推荐）
 pdb = openmm.app.PDBFile('file.pdb')
 modeller = openmm.app.Modeller(pdb.topology, pdb.positions)
 modeller.addSolvent(forcefield, ...)
 system = forcefield.createSystem(modeller.topology, ...)
 solute_idxs = set(range(22))  # 硬编码
 
-# ✅ 新版（推荐）
+# [OK] 新版（推荐）
 topology = mdtop.Topology.from_file('file.pdb')
 topology, system = femto.md.prepare.prepare_system(..., config=config)
 solute_idxs = topology.select("not water")  # PyMol 语法
@@ -192,7 +192,7 @@ topology.select("within 5 of resn L01") # 5Å范围内
 - 支持 `.to_openmm()` / `.from_openmm()` 双向转换
 - 统一的文件 I/O 接口
 
-## 🔧 故障排除
+## 故障排除
 
 ### 问题 1: ImportError: No module named 'femto' 或 'mdtop'
 
@@ -237,7 +237,7 @@ n_replicas = 4      # 原来是 6
 n_cycles = 250      # 原来是 500
 ```
 
-## 📚 参考文献
+## 参考文献
 
 **REST2 原始论文**:
 - Wang, L. et al. (2011). *Replica Exchange with Solute Scaling: A More Efficient Version of Replica Exchange with Solute Tempering (REST2)*. J. Phys. Chem. B, 115(30), 9431-9438.
@@ -249,7 +249,7 @@ n_cycles = 250      # 原来是 500
 - MD 指南：https://psivant.github.io/femto/latest/guide-md/
 - 迁移指南：https://psivant.github.io/femto/latest/migration/
 
-## ⏱️ 时间估算
+## 时间估算
 
 | 步骤 | CPU | GPU |
 |-----|-----|-----|
@@ -258,7 +258,7 @@ n_cycles = 250      # 原来是 500
 | Step 3 (分析) | ~1 分钟 | ~1 分钟 |
 | **总计** | **~17-22 分钟** | **~5-7 分钟** |
 
-## ✅ 成功标准
+## 成功标准
 
 - [x] 系统包含 ~3000 原子（~1000 水分子）
 - [x] REST2 只缩放溶质 22 原子
@@ -280,7 +280,7 @@ n_cycles = 250      # 原来是 500
 
 ---
 
-**祝测试顺利！** 🎉
+**祝测试顺利！** 
 
 如有问题，请检查：
 1. Python 版本是否 >= 3.10？
