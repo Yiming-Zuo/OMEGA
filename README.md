@@ -8,8 +8,8 @@ OMEGA（OpenMM Enhanced-sampling General Architecture）是一个面向分子模
 
 ## 开发阶段
 
-1. **阶段一**：丙氨酸二肽（Alanine Dipeptide）的测试采样 ← 当前阶段
-2. **阶段二**：溶剂分支采样实现
+1. **阶段一**：丙氨酸二肽（Alanine Dipeptide）的测试采样
+2. **阶段二**：溶剂分支采样实现 ← 当前阶段
 3. **阶段三**：复合物分支采样实现
 
 ## 数据流动
