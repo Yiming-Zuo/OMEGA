@@ -22,6 +22,7 @@ from openmm.app import (
 )
 from openmm import XmlSerializer, LangevinMiddleIntegrator
 from openmm.unit import kelvin, picosecond, femtoseconds, nanoseconds
+from tqdm import tqdm
 
 
 def load_config(solvent: str) -> dict:
@@ -31,6 +32,25 @@ def load_config(solvent: str) -> dict:
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
     with open(config_path, encoding='utf-8') as f:
         return yaml.safe_load(f)
+
+
+def run_with_progress(simulation, total_steps, desc, chunk_size=1000):
+    """带进度条的模拟运行
+
+    Args:
+        simulation: OpenMM Simulation 对象
+        total_steps: 总步数
+        desc: 进度条描述
+        chunk_size: 每次运行的步数（用于更新进度条）
+    """
+    with tqdm(total=total_steps, desc=desc, unit="step",
+              bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+        remaining = total_steps
+        while remaining > 0:
+            steps = min(chunk_size, remaining)
+            simulation.step(steps)
+            pbar.update(steps)
+            remaining -= steps
 
 
 def parse_args():
@@ -150,17 +170,19 @@ def main():
     steps_per_stage = n_heating_steps // n_heating_stages
 
     print(f"  升温阶段 (50K -> {temperature}):")
-    for i in range(n_heating_stages):
-        current_temp = 50 * kelvin + (temperature - 50 * kelvin) * (i + 1) / n_heating_stages
-        integrator.setTemperature(current_temp)
-        simulation.step(steps_per_stage)
-        print(f"    阶段 {i+1}/{n_heating_stages}: {current_temp}")
+    with tqdm(range(n_heating_stages), desc="  升温",
+              bar_format='{desc}: {percentage:3.0f}%|{bar}| {n}/{total} [{elapsed}<{remaining}]') as pbar:
+        for i in pbar:
+            current_temp = 50 * kelvin + (temperature - 50 * kelvin) * (i + 1) / n_heating_stages
+            integrator.setTemperature(current_temp)
+            simulation.step(steps_per_stage)
+            pbar.set_postfix_str(f"{current_temp}")
 
     # NVT 平衡
     remaining_steps = equilibration_steps - n_heating_steps
-    print(f"  NVT 平衡 ({remaining_steps} 步)...")
+    print(f"  NVT 平衡 ({remaining_steps} 步):")
     integrator.setTemperature(temperature)
-    simulation.step(remaining_steps)
+    run_with_progress(simulation, remaining_steps, "  NVT平衡")
 
     state = simulation.context.getState(getEnergy=True)
     equilibrated_energy = state.getPotentialEnergy()
@@ -198,20 +220,6 @@ def main():
         CheckpointReporter(str(checkpoint_path), checkpoint_interval)
     )
 
-    # 控制台输出
-    simulation.reporters.append(
-        StateDataReporter(
-            sys.stdout, report_interval * 10,
-            step=True,
-            time=True,
-            potentialEnergy=True,
-            temperature=True,
-            speed=True,
-            remainingTime=True,
-            totalSteps=production_steps
-        )
-    )
-
     total_time_ns = production_steps * timestep.value_in_unit(nanoseconds)
     n_frames = production_steps // trajectory_interval
 
@@ -224,7 +232,7 @@ def main():
     print(f"    - 检查点: {checkpoint_path}")
     print()
 
-    simulation.step(production_steps)
+    run_with_progress(simulation, production_steps, "  生产MD", chunk_size=5000)
 
     # -------------------------------------------------------------------------
     # 完成

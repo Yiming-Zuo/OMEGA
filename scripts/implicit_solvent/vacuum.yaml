@@ -24,19 +24,19 @@ simulation:
   # --- 采样控制 ---
   equilibration_steps: 50000      # 平衡化步数，= 100 ps @ 2fs/step
                                   # 包括升温和 NVT 平衡，确保系统达到目标温度
-  production_steps: 5000000       # 生产 MD 步数，= 10 ns @ 2fs/step
+  production_steps: 2500000000       # 生产 MD 步数，= 5 μs @ 2fs/step
                                   # 决定采样时间长度，需足够长以观察构象转换
 
   # --- 输出频率 ---
-  report_interval: 1000           # 状态报告间隔 (步)，= 2 ps
+  report_interval: 10000           # 状态报告间隔 (步)，= 20 ps
                                   # 输出能量、温度等到 state_data.csv
-  trajectory_interval: 1000       # 轨迹保存间隔 (步)，= 2 ps
+  trajectory_interval: 10000       # 轨迹保存间隔 (步)，= 20 ps
                                   # 影响轨迹文件大小和分析分辨率
-  checkpoint_interval: 50000      # 检查点保存间隔 (步)，= 100 ps
+  checkpoint_interval: 500000      # 检查点保存间隔 (步)，= 1000 ps
                                   # 用于断点续跑，间隔太短影响性能
 
 input:
-  pdb: data/alanine_dipeptide/alanine-dipeptide.pdb
+  pdb: data/ALDP/aldp.pdb
                                   # 输入 PDB 文件路径（相对于项目根目录）
                                   # ACE-ALA-NME 封端二肽，22 个原子
 
