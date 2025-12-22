@@ -1,18 +1,25 @@
 #!/usr/bin/env python
 """
-隐式溶剂 MD 结果分析脚本（通用版）
+隐式溶剂 MD 结果分析脚本（通用版 + MSM）
 
 支持气相（vacuum）和隐式溶剂（GBSA）两种模式。
+可选启用 Deeptime MSM 分析进行自动化亚稳态识别。
 
 使用方式:
+    # 基础分析
     python 03_analyze_results.py --solvent vacuum
     python 03_analyze_results.py --solvent gbsa
+
+    # 启用 MSM 分析
+    python 03_analyze_results.py --solvent vacuum --msm
+    python 03_analyze_results.py --solvent gbsa --msm --n-clusters 150 --n-metastable 5
 
 分析内容:
 1. 能量和温度收敛性
 2. φ/ψ 二面角分布（Ramachandran 图）
-3. 构象占比统计
+3. 构象占比统计（手工划分）
 4. 构象转换分析
+5. [可选] MSM 马尔科夫状态模型分析（TICA + k-means + PCCA+）
 """
 
 import argparse
@@ -31,6 +38,14 @@ try:
 except ImportError:
     HAS_MDTRAJ = False
     print("[WARN] mdtraj 未安装，将跳过轨迹分析")
+
+# MSM 分析模块（可选，基于 Deeptime）
+try:
+    from msm_analysis import MSMAnalyzer
+    from msm_visualization import MSMVisualizer
+    HAS_DEEPTIME = True
+except ImportError:
+    HAS_DEEPTIME = False
 
 
 def load_config(solvent: str) -> dict:
@@ -51,6 +66,38 @@ def parse_args():
         required=True,
         help='溶剂模型: vacuum (气相) 或 gbsa (隐式溶剂)'
     )
+
+    # MSM 分析参数
+    parser.add_argument(
+        '--msm',
+        action='store_true',
+        help='启用 MSM 马尔科夫状态模型分析'
+    )
+    parser.add_argument(
+        '--tica-lag',
+        type=int,
+        default=50,
+        help='TICA lag time（帧数，默认 50）'
+    )
+    parser.add_argument(
+        '--n-clusters',
+        type=int,
+        default=100,
+        help='k-means 聚类数目（默认 100）'
+    )
+    parser.add_argument(
+        '--msm-lag',
+        type=int,
+        default=None,
+        help='MSM lag time（帧数，默认自动选择）'
+    )
+    parser.add_argument(
+        '--n-metastable',
+        type=int,
+        default=4,
+        help='PCCA+ 亚稳态数目（默认 4）'
+    )
+
     return parser.parse_args()
 
 
@@ -123,14 +170,19 @@ def main():
 
     results_dir.mkdir(parents=True, exist_ok=True)
 
+    # 计算总步骤数
+    total_steps = 5 if args.msm else 4
+
     print("=" * 60)
     print(f"结果分析: {solvent_config['name'].upper()} 模式")
+    if args.msm:
+        print("  [启用 MSM 分析]")
     print("=" * 60)
 
     # -------------------------------------------------------------------------
     # 1. 分析能量和温度
     # -------------------------------------------------------------------------
-    print("\n[1/4] 分析能量和温度...")
+    print(f"\n[1/{total_steps}] 分析能量和温度...")
 
     state_data_path = md_dir / "state_data.csv"
     if state_data_path.exists():
@@ -184,7 +236,7 @@ def main():
     # -------------------------------------------------------------------------
     # 2. 分析轨迹
     # -------------------------------------------------------------------------
-    print("\n[2/4] 分析轨迹...")
+    print(f"\n[2/{total_steps}] 分析轨迹...")
 
     if not HAS_MDTRAJ:
         print("  [FAIL] 需要 mdtraj 库")
@@ -214,7 +266,7 @@ def main():
     # -------------------------------------------------------------------------
     # 3. 绘制 Ramachandran 图
     # -------------------------------------------------------------------------
-    print("\n[3/4] 绘制 Ramachandran 图...")
+    print(f"\n[3/{total_steps}] 绘制 Ramachandran 图...")
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -262,9 +314,9 @@ def main():
     plt.close()
 
     # -------------------------------------------------------------------------
-    # 4. 构象分析
+    # 4. 构象分析（手工划分）
     # -------------------------------------------------------------------------
-    print("\n[4/4] 构象分析...")
+    print(f"\n[4/{total_steps}] 构象分析（手工划分）...")
 
     labels = classify_conformations(phi_deg, psi_deg)
     populations = compute_conformer_populations(labels)
@@ -319,6 +371,61 @@ def main():
     plt.close()
 
     # -------------------------------------------------------------------------
+    # 5. MSM 马尔科夫状态模型分析（可选）
+    # -------------------------------------------------------------------------
+    msm_result = None
+    if args.msm:
+        print(f"\n[5/{total_steps}] MSM 马尔科夫状态模型分析...")
+
+        if not HAS_DEEPTIME:
+            print("  [FAIL] 需要安装 Deeptime: conda install -c conda-forge deeptime")
+            print("  跳过 MSM 分析")
+        else:
+            # 创建 MSM 输出目录
+            msm_dir = results_dir / "msm"
+            msm_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                # 初始化分析器
+                analyzer = MSMAnalyzer(
+                    trajectory_path=str(trajectory_path),
+                    topology_path=str(topology_path),
+                    timestep_ps=dt_ps,
+                )
+
+                # 运行完整 MSM 流程
+                msm_result = analyzer.run_full_analysis(
+                    tica_lag=args.tica_lag,
+                    n_clusters=args.n_clusters,
+                    msm_lag=args.msm_lag,
+                    n_metastable=args.n_metastable,
+                )
+
+                # 可视化
+                print("\n  生成 MSM 图表...")
+                visualizer = MSMVisualizer(
+                    msm_result,
+                    output_dir=msm_dir,
+                    solvent_name=solvent_config['name'],
+                    temperature=sim_config['temperature'],
+                )
+                visualizer.plot_all()
+
+                # 保存结果
+                msm_result.save(msm_dir / "msm_model.pkl")
+                print(f"    [OK] msm_model.pkl")
+
+                msm_result.export_kinetics_csv(msm_dir / "kinetics_summary.csv")
+                print(f"    [OK] kinetics_summary.csv")
+
+                print(f"\n  [OK] MSM 分析完成，结果保存至: {msm_dir}")
+
+            except Exception as e:
+                print(f"  [FAIL] MSM 分析失败: {e}")
+                import traceback
+                traceback.print_exc()
+
+    # -------------------------------------------------------------------------
     # 总结
     # -------------------------------------------------------------------------
     print("\n" + "=" * 60)
@@ -330,6 +437,19 @@ def main():
     print(f"  - {results_dir / 'ramachandran.png'}")
     print(f"  - {results_dir / 'conformer_populations.csv'}")
     print(f"  - {results_dir / 'conformer_timeline.png'}")
+
+    if args.msm and msm_result is not None:
+        msm_dir = results_dir / "msm"
+        print(f"\nMSM 分析输出:")
+        print(f"  - {msm_dir / 'tica_projection.png'}")
+        print(f"  - {msm_dir / 'implied_timescales.png'}")
+        print(f"  - {msm_dir / 'cktest.png'}")
+        print(f"  - {msm_dir / 'free_energy_surface.png'}")
+        print(f"  - {msm_dir / 'metastable_states.png'}")
+        print(f"  - {msm_dir / 'transition_network.png'}")
+        print(f"  - {msm_dir / 'metastable_timeline.png'}")
+        print(f"  - {msm_dir / 'kinetics_summary.csv'}")
+        print(f"  - {msm_dir / 'msm_model.pkl'}")
 
     # 溶剂模型特点说明
     if solvent_config['name'] == 'vacuum':
