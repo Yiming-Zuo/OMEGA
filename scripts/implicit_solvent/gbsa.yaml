@@ -1,0 +1,57 @@
+# =============================================================================
+# GBSA 隐式溶剂（水溶液）配置
+# =============================================================================
+# 用于丙氨酸二肽在水溶液环境下的 MD 采样
+# 使用 Generalized Born / Surface Area (GBSA) 模型模拟溶剂效应
+# 水的介电效应削弱分子内氢键，PII/β 构象比例增加
+
+solvent:
+  name: gbsa                      # 溶剂模型名称，用于输出路径和日志标识
+  force_fields:
+    - amber14-all.xml             # Amber14 蛋白质力场，提供键、角、二面角、非键参数
+    - implicit/gbn2.xml           # GBn2 隐式溶剂参数 (igb=8)，提供 Born 半径和 SA 系数
+                                  # GBn2 是精度较高的 GB 模型，推荐用于蛋白质/肽
+                                  # 其他选项：implicit/obc2.xml (igb=5), implicit/gbn.xml (igb=7)
+
+  # --- 介电常数设置 ---
+  solute_dielectric: 1.0          # 溶质内部介电常数，通常设为 1.0（真空值）
+                                  # 较大值会削弱溶质内部的静电相互作用
+  solvent_dielectric: 78.5        # 溶剂介电常数，水在 25C 约为 78.5
+                                  # 决定溶剂对电荷的屏蔽强度
+                                  # 较大值：静电屏蔽更强，盐桥/氢键更弱
+
+simulation:
+  # --- 温度控制 ---
+  temperature: 300                # 模拟温度 (K)，影响构象采样和动力学速率
+  friction: 1.0                   # Langevin 摩擦系数 (1/ps)，控制与热浴耦合强度
+                                  # 较大值：温度控制更严格，动力学更接近布朗运动
+                                  # 较小值：动力学更接近真实 NVE，但温度波动较大
+
+  # --- 积分参数 ---
+  timestep: 2.0                   # 积分步长 (fs)，使用 HBonds 约束时可用 2fs
+                                  # 影响模拟效率和数值稳定性
+
+  # --- 采样控制 ---
+  equilibration_steps: 50000      # 平衡化步数，= 100 ps @ 2fs/step
+                                  # 包括升温和 NVT 平衡，确保系统达到目标温度
+  production_steps: 5000000       # 生产 MD 步数，= 10 ns @ 2fs/step
+                                  # 决定采样时间长度，需足够长以观察构象转换
+
+  # --- 输出频率 ---
+  report_interval: 1000           # 状态报告间隔 (步)，= 2 ps
+                                  # 输出能量、温度等到 state_data.csv
+  trajectory_interval: 1000       # 轨迹保存间隔 (步)，= 2 ps
+                                  # 影响轨迹文件大小和分析分辨率
+  checkpoint_interval: 50000      # 检查点保存间隔 (步)，= 100 ps
+                                  # 用于断点续跑，间隔太短影响性能
+
+input:
+  pdb: data/alanine_dipeptide/alanine-dipeptide.pdb
+                                  # 输入 PDB 文件路径（相对于项目根目录）
+                                  # ACE-ALA-NME 封端二肽，22 个原子
+
+output:
+  system_dir: outputs/implicit_solvent/gbsa/alanine_dipeptide
+                                  # 系统输出目录：system.xml, system.pdb, md/
+  results_dir: results/implicit_solvent/gbsa/alanine_dipeptide
+                                  # 分析结果目录：ramachandran.png, conformer_populations.csv

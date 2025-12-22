@@ -140,6 +140,8 @@ FReD/data/rep_*/#*#
 *.png
 *.pdb
 *.txt
+*.csv
+*.chk
 
 *.mol2
 
