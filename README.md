@@ -13,9 +13,20 @@ OMEGA（OpenMM Enhanced-sampling General Architecture）是一个面向分子模
 3. **阶段三**：复合物分支采样实现
 
 ## 数据流动
+
+```
+[01_prepare_system.py]
+力场参数化 + 溶剂化（无中和）-> REST2 缩放 -> 保存文件
+
+[02_run_rest2_hremd.py]  
+能量最小化 -> NVT升温(25ps) -> NPT平衡(100ps) -> HREMD生产采样(2-4ns)
+```
+
+
+
 ```
     输入结构                系统准备                  HREMD 采样               结果分析       
-   (溶质 PDB)       (溶剂化+参数化+REST2缩放)         (多副本交换)           (接受率/能量/构象) 
+   (溶质 PDB)       (参数化+溶剂化+REST2缩放)         (多副本交换)           (接受率/能量/构象) 
         ↓                    ↓                          ↓                       ↓          
 ┌──────────────┐    ┌──────────────────┐     ┌─────────────────────┐     ┌──────────────┐
 │  ligand.pdb  │    │ system.xml(构型)  │     │ samples.arrow(能量) │     │ 接受率矩阵     │ 
@@ -23,13 +34,13 @@ OMEGA（OpenMM Enhanced-sampling General Architecture）是一个面向分子模
 │              │    │ topology.pkl(力场)│     │    checkpoint      │     │ Ramachandran  │
 └──────────────┘    └──────────────────┘     └─────────────────────┘     └──────────────┘
                      01_prepare_system          02_run_rest2_hremd      03_analyze_results 
-1. 溶剂化（Solvation）
-	- 水模型：TIP3P
-	- 盒子：cube、10Å padding
-2. 参数化（Parameterization）
+1. 参数化（Parameterization）
 	- 力场：Amber14
 	- 键、角、二面角
 	- 非键合：电荷、LJ参数
+2. 溶剂化（Solvation）
+	- 水模型：TIP3P
+	- 盒子：cube、10Å padding
 3. REST2缩放（Scaling）
 	- 选择溶质分子
 	- 缩放二面角

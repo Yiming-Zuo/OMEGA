@@ -141,5 +141,10 @@ FReD/data/rep_*/#*#
 *.pdb
 *.txt
 
+*.mol2
+
+
 femto/
 FReD/
+FXR_experimental_data/
+results/

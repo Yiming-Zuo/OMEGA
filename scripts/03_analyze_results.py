@@ -32,7 +32,7 @@ print("="*60)
 # =====================================================================
 # 1. 加载采样数据
 # =====================================================================
-print("\n[1/6] 加载 HREMD 采样数据...")
+print("\n[1/8] 加载 HREMD 采样数据...")
 
 samples_file = pathlib.Path('outputs_v2_gpu/samples.arrow')
 if not samples_file.exists():
@@ -53,7 +53,7 @@ print(f"  - 数据列: {list(df.columns)}")
 # =====================================================================
 # 2. 分析交换接受率（修复版）
 # =====================================================================
-print("\n[2/6] 分析交换接受率...")
+print("\n[2/8] 分析交换接受率...")
 
 n_replicas = None
 acceptance_rates = None
@@ -149,7 +149,7 @@ if 'n_proposed_swaps' in df.columns and 'n_accepted_swaps' in df.columns:
 # =====================================================================
 # 3. 分析副本游走（Replica Random Walk）
 # =====================================================================
-print("\n[3/6] 分析副本游走...")
+print("\n[3/8] 分析副本游走...")
 
 if 'replica_to_state_idx' in df.columns and n_replicas is not None:
     replica_indices = np.array([np.array(x) for x in df['replica_to_state_idx']])
@@ -194,7 +194,7 @@ if 'replica_to_state_idx' in df.columns and n_replicas is not None:
 # =====================================================================
 # 4. 分析能量（修复版）
 # =====================================================================
-print("\n[4/6] 分析能量收敛性...")
+print("\n[4/8] 分析能量收敛性...")
 
 energies = None
 
@@ -280,7 +280,7 @@ if energies is not None and energies.size > 0:
 # =====================================================================
 # 5. 分析扭转角（增强版）
 # =====================================================================
-print("\n[5/6] 分析扭转角分布...")
+print("\n[5/8] 分析扭转角分布...")
 
 phi_deg = None
 psi_deg = None
@@ -503,9 +503,356 @@ if HAS_MDTRAJ:
             print()
 
 # =====================================================================
-# 6. 生成总结报告
+# 6. HREMD 混合统计分析 (新增)
 # =====================================================================
-print("\n[6/6] 生成总结报告...")
+print("\n[6/8] HREMD 混合统计分析...")
+
+# 混合统计分析函数定义
+def compute_transition_matrix_from_trajectories(replica_states):
+    """
+    从副本状态轨迹计算转移矩阵
+
+    参数:
+        replica_states: shape (n_cycles, n_replicas)
+                       replica_states[t, r] = 副本r在时刻t所处的状态索引
+
+    返回:
+        transition_matrix: shape (n_states, n_states)
+                          T[i,j] = 从状态i转移到状态j的概率
+        transition_counts: 原始转移次数矩阵
+    """
+    n_cycles, n_replicas = replica_states.shape
+    n_states = n_replicas  # 状态数等于副本数
+
+    # 统计转移次数
+    transition_counts = np.zeros((n_states, n_states), dtype=int)
+
+    # 遍历每个副本的轨迹
+    for r in range(n_replicas):
+        for t in range(n_cycles - 1):
+            state_from = replica_states[t, r]
+            state_to = replica_states[t + 1, r]
+            transition_counts[state_from, state_to] += 1
+
+    # 归一化为概率矩阵
+    row_sums = transition_counts.sum(axis=1, keepdims=True)
+    transition_matrix = np.divide(
+        transition_counts, row_sums,
+        out=np.zeros_like(transition_counts, dtype=float),
+        where=row_sums > 0
+    )
+
+    return transition_matrix, transition_counts
+
+
+def compute_subdominant_eigenvalue(transition_matrix):
+    """计算转移矩阵的次主导特征值和所有特征值"""
+    # 确保矩阵是随机矩阵（每行和为1）
+    row_sums = transition_matrix.sum(axis=1, keepdims=True)
+    P = np.divide(
+        transition_matrix, row_sums,
+        out=np.zeros_like(transition_matrix),
+        where=row_sums > 0
+    )
+
+    # 计算特征值（需要转置，因为我们要左特征向量）
+    eigenvalues, _ = np.linalg.eig(P.T)
+
+    # 按绝对值排序
+    eigenvalues = np.sort(np.abs(eigenvalues.real))[::-1]
+
+    # 第一特征值永远是1.0，返回第二个
+    lambda_2 = eigenvalues[1] if len(eigenvalues) > 1 else 0.0
+
+    return lambda_2, eigenvalues
+
+
+def compute_mixing_time(lambda_2):
+    """计算混合时间"""
+    if lambda_2 >= 1.0 or lambda_2 <= 0:
+        return float('inf')
+    return -1.0 / np.log(lambda_2)
+
+
+def count_roundtrips(replica_states, replica_idx=0):
+    """
+    计算指定副本完成的round-trip次数
+    Round-trip: 从state 0 到 state n-1 再回到 state 0
+    """
+    n_states = replica_states.shape[1]
+    states = replica_states[:, replica_idx]
+
+    n_roundtrips = 0
+    at_bottom = True
+    reached_top = False
+
+    for state in states:
+        if at_bottom and state == n_states - 1:
+            reached_top = True
+            at_bottom = False
+        elif reached_top and state == 0:
+            n_roundtrips += 1
+            at_bottom = True
+            reached_top = False
+
+    return n_roundtrips
+
+
+# 执行混合统计分析
+mixing_lambda_2 = None
+mixing_time = None
+mixing_transition_matrix = None
+
+if 'replica_to_state_idx' in df.columns and n_replicas is not None:
+    replica_states = np.array([np.array(x) for x in df['replica_to_state_idx']])
+    n_cycles = replica_states.shape[0]
+
+    print(f"  副本状态数据: {replica_states.shape}")
+
+    # 6.1 计算转移矩阵
+    mixing_transition_matrix, transition_counts = compute_transition_matrix_from_trajectories(replica_states)
+
+    print(f"\n  ========================================")
+    print(f"  6.1 转移状态矩阵分析")
+    print(f"  ========================================")
+
+    print(f"\n  转移次数矩阵:")
+    print("         ", end="")
+    for j in range(n_replicas):
+        print(f"State{j:2d}", end="  ")
+    print()
+    for i in range(n_replicas):
+        print(f"  State{i}", end=" ")
+        for j in range(n_replicas):
+            print(f"{transition_counts[i,j]:7d}", end="  ")
+        print()
+
+    print(f"\n  转移概率矩阵:")
+    print("         ", end="")
+    for j in range(n_replicas):
+        print(f"State{j:2d}", end="  ")
+    print()
+    for i in range(n_replicas):
+        print(f"  State{i}", end=" ")
+        for j in range(n_replicas):
+            print(f"{mixing_transition_matrix[i,j]:7.4f}", end="  ")
+        print()
+
+    # 分析对角线元素
+    diag_elements = np.diag(mixing_transition_matrix)
+    diag_min, diag_max = diag_elements.min(), diag_elements.max()
+
+    # 分析相邻态交换概率
+    neighbor_probs = []
+    for i in range(n_replicas - 1):
+        neighbor_probs.append(mixing_transition_matrix[i, i+1])
+    neighbor_min, neighbor_max = min(neighbor_probs), max(neighbor_probs)
+
+    print(f"\n  评估结果:")
+    diag_status = "[OK]" if diag_max < 0.7 else "[WARN]"
+    print(f"    - 对角线元素范围: [{diag_min:.4f}, {diag_max:.4f}] {diag_status}")
+    neighbor_status = "[OK]" if neighbor_min > 0.2 else "[WARN]"
+    print(f"    - 相邻态交换概率范围: [{neighbor_min:.4f}, {neighbor_max:.4f}] {neighbor_status}")
+
+    # 6.2 计算次主导特征值
+    mixing_lambda_2, all_eigenvalues = compute_subdominant_eigenvalue(mixing_transition_matrix)
+    mixing_time = compute_mixing_time(mixing_lambda_2)
+
+    print(f"\n  ========================================")
+    print(f"  6.2 次主导特征值分析")
+    print(f"  ========================================")
+
+    print(f"\n  特征值列表: {np.round(all_eigenvalues, 4).tolist()}")
+    print(f"  次主导特征值 lambda_2 = {mixing_lambda_2:.4f}")
+    print(f"  混合时间 tau_mix = {mixing_time:.2f} 次迭代")
+
+    # 评估
+    if mixing_lambda_2 < 0.5:
+        lambda_status = "[OK] 优秀"
+        mixing_quality = "充分混合"
+    elif mixing_lambda_2 < 0.8:
+        lambda_status = "[OK] 可接受"
+        mixing_quality = "中等混合"
+    elif mixing_lambda_2 < 0.95:
+        lambda_status = "[WARN] 警告"
+        mixing_quality = "混合较慢"
+    else:
+        lambda_status = "[FAIL] 失败"
+        mixing_quality = "混合不良"
+
+    print(f"\n  评估结果:")
+    print(f"    - lambda_2 判定: {lambda_status}")
+    print(f"    - 混合质量: {mixing_quality}")
+
+    # 6.3 副本轨迹诊断
+    print(f"\n  ========================================")
+    print(f"  6.3 副本轨迹诊断")
+    print(f"  ========================================")
+
+    # 状态覆盖度
+    state_coverage = []
+    for r in range(n_replicas):
+        unique_states = len(np.unique(replica_states[:, r]))
+        state_coverage.append(unique_states)
+        coverage_pct = 100.0 * unique_states / n_replicas
+        status = "[OK]" if coverage_pct == 100 else "[WARN]"
+        print(f"    Replica {r}: {unique_states}/{n_replicas} states ({coverage_pct:.1f}%) {status}")
+
+    # Round-trip 统计
+    roundtrips = []
+    for r in range(n_replicas):
+        rt = count_roundtrips(replica_states, r)
+        roundtrips.append(rt)
+
+    total_roundtrips = sum(roundtrips)
+    avg_roundtrips = total_roundtrips / n_replicas
+
+    print(f"\n  Round-trip 统计:")
+    for r in range(n_replicas):
+        print(f"    Replica {r}: {roundtrips[r]} 次")
+    print(f"    总计: {total_roundtrips} 次, 平均: {avg_roundtrips:.1f} 次/副本")
+
+    rt_status = "[OK]" if avg_roundtrips >= 3 else "[WARN]"
+    print(f"    评估 (平均 >= 3): {rt_status}")
+
+    # 6.4 生成可视化
+
+    # 热图: 转移矩阵
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    im = axes[0].imshow(mixing_transition_matrix, cmap='Blues', aspect='auto', vmin=0, vmax=1)
+    axes[0].set_xlabel('目标状态 j')
+    axes[0].set_ylabel('源状态 i')
+    axes[0].set_title('状态转移概率矩阵 P[i,j]')
+    axes[0].set_xticks(range(n_replicas))
+    axes[0].set_yticks(range(n_replicas))
+    axes[0].set_xticklabels([f'S{i}' for i in range(n_replicas)])
+    axes[0].set_yticklabels([f'S{i}' for i in range(n_replicas)])
+
+    # 添加数值标注
+    for i in range(n_replicas):
+        for j in range(n_replicas):
+            val = mixing_transition_matrix[i, j]
+            color = 'white' if val > 0.5 else 'black'
+            axes[0].text(j, i, f'{val:.2f}', ha='center', va='center', color=color, fontsize=10)
+
+    plt.colorbar(im, ax=axes[0], label='转移概率')
+
+    # 特征值柱状图
+    x_pos = range(len(all_eigenvalues))
+    colors = ['green' if i == 0 else ('orange' if all_eigenvalues[i] > 0.8 else 'blue')
+              for i in range(len(all_eigenvalues))]
+    axes[1].bar(x_pos, all_eigenvalues, color=colors)
+    axes[1].axhline(0.8, color='red', linestyle='--', alpha=0.7, label='lambda_2 < 0.8 理想阈值')
+    axes[1].set_xlabel('特征值序号')
+    axes[1].set_ylabel('特征值 |lambda|')
+    axes[1].set_title(f'转移矩阵特征值分布 (lambda_2 = {mixing_lambda_2:.4f})')
+    axes[1].set_xticks(x_pos)
+    axes[1].set_xticklabels([f'lambda_{i}' for i in range(len(all_eigenvalues))])
+    axes[1].legend()
+    axes[1].grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('transition_matrix_heatmap.png', dpi=300)
+    print(f"\n  [OK] 保存: transition_matrix_heatmap.png")
+
+    # 副本轨迹图 (增强版)
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+
+    # 绘制副本轨迹（采样显示以提高性能）
+    sample_interval = max(1, n_cycles // 5000)  # 最多显示5000个点
+    sampled_indices = np.arange(0, n_cycles, sample_interval)
+
+    for r in range(n_replicas):
+        axes[0].plot(sampled_indices, replica_states[sampled_indices, r],
+                     alpha=0.7, linewidth=0.5, label=f'Replica {r}')
+
+    axes[0].set_xlabel('迭代周期')
+    axes[0].set_ylabel('状态索引')
+    axes[0].set_title(f'副本状态轨迹 (lambda_2 = {mixing_lambda_2:.4f}, tau_mix = {mixing_time:.1f})')
+    axes[0].legend(ncol=n_replicas, fontsize=8, loc='upper right')
+    axes[0].set_yticks(range(n_replicas))
+    axes[0].set_yticklabels([f'State {i}' for i in range(n_replicas)])
+    axes[0].grid(alpha=0.3)
+
+    # 状态覆盖和round-trip柱状图
+    x = np.arange(n_replicas)
+    width = 0.35
+
+    bars1 = axes[1].bar(x - width/2, state_coverage, width, label='状态覆盖数', color='steelblue')
+    bars2 = axes[1].bar(x + width/2, roundtrips, width, label='Round-trip次数', color='coral')
+
+    axes[1].axhline(n_replicas, color='green', linestyle='--', alpha=0.7, label=f'完全覆盖 ({n_replicas}个状态)')
+    axes[1].axhline(3, color='orange', linestyle=':', alpha=0.7, label='Round-trip判据 (>=3)')
+
+    axes[1].set_xlabel('副本索引')
+    axes[1].set_ylabel('计数')
+    axes[1].set_title('副本采样统计')
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels([f'Replica {i}' for i in range(n_replicas)])
+    axes[1].legend()
+    axes[1].grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('replica_state_trajectory.png', dpi=300)
+    print(f"  [OK] 保存: replica_state_trajectory.png")
+
+    # 生成文本报告
+    report_lines = [
+        "=" * 60,
+        "HREMD 采样质量评估报告",
+        "=" * 60,
+        "",
+        "一、转移状态矩阵分析",
+        "-" * 40,
+        f"  矩阵维度: {n_replicas} x {n_replicas}",
+        f"  对角线元素范围: [{diag_min:.4f}, {diag_max:.4f}]",
+        f"  相邻态交换概率范围: [{neighbor_min:.4f}, {neighbor_max:.4f}]",
+        "",
+        "  评估结果:",
+        f"    - 对角线元素 < 0.7: {diag_status}",
+        f"    - 相邻态交换 > 0.2: {neighbor_status}",
+        "",
+        "二、次主导特征值分析",
+        "-" * 40,
+        f"  特征值列表: {np.round(all_eigenvalues, 4).tolist()}",
+        f"  次主导特征值 lambda_2 = {mixing_lambda_2:.4f}",
+        f"  混合时间 tau_mix = {mixing_time:.2f} 次迭代",
+        "",
+        "  评估结果:",
+        f"    - lambda_2 判定: {lambda_status}",
+        f"    - 混合质量: {mixing_quality}",
+        "",
+        "三、副本轨迹诊断",
+        "-" * 40,
+        f"  副本数: {n_replicas}",
+        f"  总迭代数: {n_cycles}",
+        "",
+        "  各副本状态覆盖度:",
+    ]
+
+    for r in range(n_replicas):
+        coverage_pct = 100.0 * state_coverage[r] / n_replicas
+        status = "[OK]" if coverage_pct == 100 else "[WARN]"
+        report_lines.append(f"    Replica {r}: {state_coverage[r]}/{n_replicas} states ({coverage_pct:.1f}%) {status}")
+
+    report_lines.extend([
+        "",
+        f"  Round-trip次数: 总计 {total_roundtrips}, 平均 {avg_roundtrips:.1f} 次/副本 {rt_status}",
+        "",
+        "=" * 60,
+    ])
+
+    report_text = "\n".join(report_lines)
+
+    with open('mixing_statistics_report.txt', 'w') as f:
+        f.write(report_text)
+    print(f"  [OK] 保存: mixing_statistics_report.txt")
+
+# =====================================================================
+# 7. 生成总结报告
+# =====================================================================
+print("\n[7/8] 生成总结报告...")
 
 print("\n" + "="*60)
 print("REST2 HREMD 优化版测试总结")
@@ -541,12 +888,16 @@ if phi_deg is not None:
         print(f"  [OK] 转换次数充足，采样较为可靠")
 
 print(f"\n输出文件:")
-print(f"  ✓ acceptance_rates_v2.png")
-print(f"  ✓ replica_walk_v2.png")
-print(f"  ✓ energy_convergence_v2.png")
+print(f"  - acceptance_rates_v2.png")
+print(f"  - replica_walk_v2.png")
+print(f"  - energy_convergence_v2.png")
 if phi_deg is not None:
-    print(f"  ✓ ramachandran_v2.png")
-    print(f"  ✓ conformation_timeline_v2.png")
+    print(f"  - ramachandran_v2.png")
+    print(f"  - conformation_timeline_v2.png")
+if mixing_transition_matrix is not None:
+    print(f"  - transition_matrix_heatmap.png")
+    print(f"  - replica_state_trajectory.png")
+    print(f"  - mixing_statistics_report.txt")
 
 print("="*60)
 print("\n[OK] 分析完成！")
